@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./App.css";
 
 function App() {
-  const [emails, setEmails] = useState([
+  const [emails] = useState([
     {
       id: 1,
       sender: "Sarah Johnson",
@@ -35,6 +35,8 @@ function App() {
 
   const [showCompose, setShowCompose] = useState(false);
 
+  const [userCommand, setUserCommand] = useState("");
+
   const handleAICommand = (command) => {
     if (command === "unread") {
       const unreadEmails = emails.filter((email) => email.unread);
@@ -62,6 +64,38 @@ function App() {
       setShowCompose(true);
       setAiMessage("Sure! Let's compose a new email.");
     }
+  };
+
+  const sendAICommand = () => {
+    const command = userCommand.toLowerCase().trim();
+
+    if (
+      command.includes("show unread") ||
+      command.includes("unread emails") ||
+      command.includes("unread mail")
+    ) {
+      handleAICommand("unread");
+    } else if (
+      command.includes("find recent") ||
+      command.includes("recent emails") ||
+      command.includes("recent mail")
+    ) {
+      handleAICommand("recent");
+    } else if (
+      command.includes("compose") ||
+      command.includes("write an email") ||
+      command.includes("new email")
+    ) {
+      handleAICommand("compose");
+    } else if (command === "") {
+      setAiMessage("Please type a command.");
+    } else {
+      setAiMessage(
+        "I don't understand that command yet. Try: show unread emails, find recent emails, or compose an email."
+      );
+    }
+
+    setUserCommand("");
   };
 
   return (
@@ -100,9 +134,7 @@ function App() {
             <p>Your latest messages</p>
           </div>
 
-          <div className="header-icons">
-            🔍 🔔
-          </div>
+          <div className="header-icons">🔍 🔔</div>
         </div>
 
         <div className="email-list">
@@ -166,10 +198,17 @@ function App() {
         <div className="ai-input">
           <input
             type="text"
+            value={userCommand}
+            onChange={(e) => setUserCommand(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                sendAICommand();
+              }
+            }}
             placeholder="Ask AI to manage your mail..."
           />
 
-          <button>➤</button>
+          <button onClick={sendAICommand}>➤</button>
         </div>
       </aside>
 
@@ -184,15 +223,9 @@ function App() {
               </button>
             </div>
 
-            <input
-              type="email"
-              placeholder="To"
-            />
+            <input type="email" placeholder="To" />
 
-            <input
-              type="text"
-              placeholder="Subject"
-            />
+            <input type="text" placeholder="Subject" />
 
             <textarea
               placeholder="Write your email..."
