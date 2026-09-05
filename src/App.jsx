@@ -1,122 +1,320 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from "react";
+import "./App.css";
+
+const sampleEmails = [
+  {
+    id: 1,
+    sender: "Sarah Johnson",
+    email: "sarah@example.com",
+    subject: "Project Update",
+    preview: "Here is the latest update about our project...",
+    body: "Hi,\n\nHere is the latest update about our project. We completed the first phase and are now working on the second phase.\n\nThanks,\nSarah",
+    date: "Today, 9:30 AM",
+    unread: true,
+  },
+  {
+    id: 2,
+    sender: "David Miller",
+    email: "david@example.com",
+    subject: "Meeting Tomorrow",
+    preview: "Are we still meeting tomorrow at 3 PM?",
+    body: "Hi,\n\nAre we still meeting tomorrow at 3 PM?\n\nRegards,\nDavid",
+    date: "Today, 8:15 AM",
+    unread: true,
+  },
+  {
+    id: 3,
+    sender: "Google",
+    email: "notifications@google.com",
+    subject: "Security Alert",
+    preview: "A new sign-in was detected on your account.",
+    body: "A new sign-in was detected on your Google account.",
+    date: "Yesterday",
+    unread: false,
+  },
+];
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [activeView, setActiveView] = useState("inbox");
+  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [showCompose, setShowCompose] = useState(false);
+
+  const openEmail = (email) => {
+    setSelectedEmail(email);
+    setActiveView("detail");
+  };
+
+  const goToInbox = () => {
+    setSelectedEmail(null);
+    setActiveView("inbox");
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app">
+
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="logo">
+          <div className="logo-icon">✉</div>
+          <div>
+            <h2>AI Mail</h2>
+            <span>Smart Email</span>
+          </div>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
+
         <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+          className="compose-button"
+          onClick={() => setShowCompose(true)}
         >
-          Count is {count}
+          ＋ Compose
         </button>
-      </section>
 
-      <div className="ticks"></div>
+        <nav className="navigation">
+          <button
+            className={activeView === "inbox" ? "nav-item active" : "nav-item"}
+            onClick={goToInbox}
+          >
+            <span>📥</span>
+            Inbox
+            <span className="count">3</span>
+          </button>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+          <button
+            className={activeView === "sent" ? "nav-item active" : "nav-item"}
+            onClick={() => {
+              setSelectedEmail(null);
+              setActiveView("sent");
+            }}
+          >
+            <span>📤</span>
+            Sent
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+          <button className="nav-item">
+            <span>⚙</span>
+            Settings
+          </button>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </aside>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* Main Area */}
+      <main className="main">
+
+        {/* Header */}
+        <header className="header">
+          <div>
+            <h1>
+              {activeView === "inbox" && "Inbox"}
+              {activeView === "sent" && "Sent"}
+              {activeView === "detail" && "Email"}
+            </h1>
+
+            <p>
+              {activeView === "inbox" &&
+                "Your latest messages"}
+              {activeView === "sent" &&
+                "Emails you have sent"}
+              {activeView === "detail" &&
+                "Email details"}
+            </p>
+          </div>
+
+          <div className="header-actions">
+            <button className="icon-button">🔍</button>
+            <button className="icon-button">🔔</button>
+          </div>
+        </header>
+
+        {/* Inbox */}
+        {activeView === "inbox" && (
+          <section className="email-list">
+            {sampleEmails.map((email) => (
+              <button
+                className={`email-card ${
+                  email.unread ? "unread" : ""
+                }`}
+                key={email.id}
+                onClick={() => openEmail(email)}
+              >
+                <div className="avatar">
+                  {email.sender.charAt(0)}
+                </div>
+
+                <div className="email-content">
+                  <div className="email-top">
+                    <strong>{email.sender}</strong>
+                    <span>{email.date}</span>
+                  </div>
+
+                  <h3>{email.subject}</h3>
+                  <p>{email.preview}</p>
+                </div>
+
+                {email.unread && <div className="unread-dot"></div>}
+              </button>
+            ))}
+          </section>
+        )}
+
+        {/* Sent */}
+        {activeView === "sent" && (
+          <section className="empty-state">
+            <div className="empty-icon">📤</div>
+            <h2>Sent Emails</h2>
+            <p>
+              Your sent emails will appear here once Gmail
+              integration is connected.
+            </p>
+          </section>
+        )}
+
+        {/* Email Detail */}
+        {activeView === "detail" && selectedEmail && (
+          <section className="email-detail">
+            <button className="back-button" onClick={goToInbox}>
+              ← Back to Inbox
+            </button>
+
+            <div className="detail-header">
+              <div className="avatar large">
+                {selectedEmail.sender.charAt(0)}
+              </div>
+
+              <div>
+                <h2>{selectedEmail.subject}</h2>
+                <p>
+                  From: {selectedEmail.sender} (
+                  {selectedEmail.email})
+                </p>
+              </div>
+            </div>
+
+            <div className="detail-date">
+              {selectedEmail.date}
+            </div>
+
+            <div className="email-body">
+              {selectedEmail.body.split("\n").map((line, index) => (
+                <p key={index}>{line || "\u00A0"}</p>
+              ))}
+            </div>
+
+            <div className="detail-actions">
+              <button
+                className="secondary-button"
+                onClick={() => setShowCompose(true)}
+              >
+                ↩ Reply
+              </button>
+
+              <button
+                className="secondary-button"
+                onClick={() => setShowCompose(true)}
+              >
+                ↗ Forward
+              </button>
+            </div>
+          </section>
+        )}
+
+      </main>
+
+      {/* AI Assistant */}
+      <aside className="assistant">
+        <div className="assistant-header">
+          <div>
+            <h2>🤖 AI Assistant</h2>
+            <span>Ready to help</span>
+          </div>
+          <div className="status-dot"></div>
+        </div>
+
+        <div className="assistant-messages">
+          <div className="ai-message">
+            Hi! 👋 I can help you manage your emails.
+          </div>
+
+          <div className="suggestions">
+            <button>
+              Show unread emails
+            </button>
+
+            <button>
+              Find recent emails
+            </button>
+
+            <button>
+              Compose an email
+            </button>
+          </div>
+        </div>
+
+        <div className="assistant-input">
+          <input
+            type="text"
+            placeholder="Ask AI to manage your mail..."
+          />
+          <button>➤</button>
+        </div>
+      </aside>
+
+      {/* Compose Modal */}
+      {showCompose && (
+        <div className="modal-overlay">
+          <div className="compose-modal">
+
+            <div className="compose-header">
+              <h2>New Message</h2>
+
+              <button
+                onClick={() => setShowCompose(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              type="email"
+              placeholder="To"
+            />
+
+            <input
+              type="text"
+              placeholder="Subject"
+            />
+
+            <textarea
+              placeholder="Write your message..."
+              rows="8"
+            />
+
+            <div className="compose-actions">
+              <button
+                className="secondary-button"
+                onClick={() => setShowCompose(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="send-button"
+                onClick={() => {
+                  alert("Send functionality will be connected to Gmail next.");
+                  setShowCompose(false);
+                }}
+              >
+                Send ✈
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
 }
 
-export default App
+export default App;
