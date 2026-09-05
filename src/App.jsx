@@ -11,6 +11,7 @@ const sampleEmails = [
     body: "Hi,\n\nHere is the latest update about our project. We completed the first phase and are now working on the second phase.\n\nThanks,\nSarah",
     date: "Today, 9:30 AM",
     unread: true,
+    recent: true,
   },
   {
     id: 2,
@@ -21,6 +22,7 @@ const sampleEmails = [
     body: "Hi,\n\nAre we still meeting tomorrow at 3 PM?\n\nRegards,\nDavid",
     date: "Today, 8:15 AM",
     unread: true,
+    recent: true,
   },
   {
     id: 3,
@@ -31,6 +33,7 @@ const sampleEmails = [
     body: "A new sign-in was detected on your Google account.",
     date: "Yesterday",
     unread: false,
+    recent: false,
   },
 ];
 
@@ -38,6 +41,9 @@ function App() {
   const [activeView, setActiveView] = useState("inbox");
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
+
+  const [emailFilter, setEmailFilter] = useState("all");
+  const [aiInput, setAiInput] = useState("");
 
   const openEmail = (email) => {
     setSelectedEmail(email);
@@ -49,13 +55,58 @@ function App() {
     setActiveView("inbox");
   };
 
+  // AI command handler
+  const handleAICommand = (command) => {
+    const text = command.toLowerCase().trim();
+
+    // Show unread emails
+    if (
+      text.includes("show unread") ||
+      text.includes("unread emails")
+    ) {
+      setEmailFilter("unread");
+      setSelectedEmail(null);
+      setActiveView("inbox");
+      setAiInput("");
+      return;
+    }
+
+    // Find recent emails
+    if (
+      text.includes("find recent") ||
+      text.includes("recent emails") ||
+      text.includes("recent mail")
+    ) {
+      setEmailFilter("recent");
+      setSelectedEmail(null);
+      setActiveView("inbox");
+      setAiInput("");
+      return;
+    }
+
+    alert(
+      "Try: Show unread emails or Find recent emails"
+    );
+  };
+
+  // Normal Inbox button
+  const handleInboxClick = () => {
+    setEmailFilter("all");
+    goToInbox();
+  };
+
   return (
     <div className="app">
 
-      {/* Sidebar */}
+      {/* SIDEBAR */}
+
       <aside className="sidebar">
+
         <div className="logo">
-          <div className="logo-icon">✉</div>
+          <div className="logo-icon">
+            ✉
+          </div>
+
           <div>
             <h2>AI Mail</h2>
             <span>Smart Email</span>
@@ -70,9 +121,14 @@ function App() {
         </button>
 
         <nav className="navigation">
+
           <button
-            className={activeView === "inbox" ? "nav-item active" : "nav-item"}
-            onClick={goToInbox}
+            className={
+              activeView === "inbox"
+                ? "nav-item active"
+                : "nav-item"
+            }
+            onClick={handleInboxClick}
           >
             <span>📥</span>
             Inbox
@@ -80,7 +136,11 @@ function App() {
           </button>
 
           <button
-            className={activeView === "sent" ? "nav-item active" : "nav-item"}
+            className={
+              activeView === "sent"
+                ? "nav-item active"
+                : "nav-item"
+            }
             onClick={() => {
               setSelectedEmail(null);
               setActiveView("sent");
@@ -89,22 +149,28 @@ function App() {
             <span>📤</span>
             Sent
           </button>
+
         </nav>
 
         <div className="sidebar-bottom">
+
           <button className="nav-item">
             <span>⚙</span>
             Settings
           </button>
+
         </div>
+
       </aside>
 
-      {/* Main Area */}
+      {/* MAIN AREA */}
+
       <main className="main">
 
-        {/* Header */}
         <header className="header">
+
           <div>
+
             <h1>
               {activeView === "inbox" && "Inbox"}
               {activeView === "sent" && "Sent"}
@@ -113,166 +179,323 @@ function App() {
 
             <p>
               {activeView === "inbox" &&
+                emailFilter === "all" &&
                 "Your latest messages"}
+
+              {activeView === "inbox" &&
+                emailFilter === "unread" &&
+                "Unread emails"}
+
+              {activeView === "inbox" &&
+                emailFilter === "recent" &&
+                "Recent emails"}
+
               {activeView === "sent" &&
                 "Emails you have sent"}
+
               {activeView === "detail" &&
                 "Email details"}
             </p>
+
           </div>
 
           <div className="header-actions">
-            <button className="icon-button">🔍</button>
-            <button className="icon-button">🔔</button>
-          </div>
-        </header>
 
-        {/* Inbox */}
-        {activeView === "inbox" && (
-          <section className="email-list">
-            {sampleEmails.map((email) => (
-              <button
-                className={`email-card ${
-                  email.unread ? "unread" : ""
-                }`}
-                key={email.id}
-                onClick={() => openEmail(email)}
-              >
-                <div className="avatar">
-                  {email.sender.charAt(0)}
-                </div>
-
-                <div className="email-content">
-                  <div className="email-top">
-                    <strong>{email.sender}</strong>
-                    <span>{email.date}</span>
-                  </div>
-
-                  <h3>{email.subject}</h3>
-                  <p>{email.preview}</p>
-                </div>
-
-                {email.unread && <div className="unread-dot"></div>}
-              </button>
-            ))}
-          </section>
-        )}
-
-        {/* Sent */}
-        {activeView === "sent" && (
-          <section className="empty-state">
-            <div className="empty-icon">📤</div>
-            <h2>Sent Emails</h2>
-            <p>
-              Your sent emails will appear here once Gmail
-              integration is connected.
-            </p>
-          </section>
-        )}
-
-        {/* Email Detail */}
-        {activeView === "detail" && selectedEmail && (
-          <section className="email-detail">
-            <button className="back-button" onClick={goToInbox}>
-              ← Back to Inbox
+            <button className="icon-button">
+              🔍
             </button>
 
-            <div className="detail-header">
-              <div className="avatar large">
-                {selectedEmail.sender.charAt(0)}
-              </div>
+            <button className="icon-button">
+              🔔
+            </button>
 
-              <div>
-                <h2>{selectedEmail.subject}</h2>
-                <p>
-                  From: {selectedEmail.sender} (
-                  {selectedEmail.email})
-                </p>
-              </div>
-            </div>
+          </div>
 
-            <div className="detail-date">
-              {selectedEmail.date}
-            </div>
+        </header>
 
-            <div className="email-body">
-              {selectedEmail.body.split("\n").map((line, index) => (
-                <p key={index}>{line || "\u00A0"}</p>
+        {/* INBOX */}
+
+        {activeView === "inbox" && (
+
+          <section className="email-list">
+
+            {sampleEmails
+              .filter((email) => {
+
+                if (emailFilter === "unread") {
+                  return email.unread;
+                }
+
+                if (emailFilter === "recent") {
+                  return email.recent;
+                }
+
+                return true;
+              })
+              .map((email) => (
+
+                <button
+                  className={`email-card ${
+                    email.unread ? "unread" : ""
+                  }`}
+                  key={email.id}
+                  onClick={() => openEmail(email)}
+                >
+
+                  <div className="avatar">
+                    {email.sender.charAt(0)}
+                  </div>
+
+                  <div className="email-content">
+
+                    <div className="email-top">
+
+                      <strong>
+                        {email.sender}
+                      </strong>
+
+                      <span>
+                        {email.date}
+                      </span>
+
+                    </div>
+
+                    <h3>
+                      {email.subject}
+                    </h3>
+
+                    <p>
+                      {email.preview}
+                    </p>
+
+                  </div>
+
+                  {email.unread && (
+                    <div className="unread-dot"></div>
+                  )}
+
+                </button>
+
               ))}
-            </div>
 
-            <div className="detail-actions">
-              <button
-                className="secondary-button"
-                onClick={() => setShowCompose(true)}
-              >
-                ↩ Reply
-              </button>
-
-              <button
-                className="secondary-button"
-                onClick={() => setShowCompose(true)}
-              >
-                ↗ Forward
-              </button>
-            </div>
           </section>
+
         )}
+
+        {/* SENT */}
+
+        {activeView === "sent" && (
+
+          <section className="empty-state">
+
+            <div className="empty-icon">
+              📤
+            </div>
+
+            <h2>
+              Sent Emails
+            </h2>
+
+            <p>
+              Your sent emails will appear here once
+              Gmail integration is connected.
+            </p>
+
+          </section>
+
+        )}
+
+        {/* EMAIL DETAIL */}
+
+        {activeView === "detail" &&
+          selectedEmail && (
+
+            <section className="email-detail">
+
+              <button
+                className="back-button"
+                onClick={goToInbox}
+              >
+                ← Back to Inbox
+              </button>
+
+              <div className="detail-header">
+
+                <div className="avatar large">
+                  {selectedEmail.sender.charAt(0)}
+                </div>
+
+                <div>
+
+                  <h2>
+                    {selectedEmail.subject}
+                  </h2>
+
+                  <p>
+                    From: {selectedEmail.sender} (
+                    {selectedEmail.email})
+                  </p>
+
+                </div>
+
+              </div>
+
+              <div className="detail-date">
+                {selectedEmail.date}
+              </div>
+
+              <div className="email-body">
+
+                {selectedEmail.body
+                  .split("\n")
+                  .map((line, index) => (
+                    <p key={index}>
+                      {line || "\u00A0"}
+                    </p>
+                  ))}
+
+              </div>
+
+              <div className="detail-actions">
+
+                <button
+                  className="secondary-button"
+                  onClick={() => setShowCompose(true)}
+                >
+                  ↩ Reply
+                </button>
+
+                <button
+                  className="secondary-button"
+                  onClick={() => setShowCompose(true)}
+                >
+                  ↗ Forward
+                </button>
+
+              </div>
+
+            </section>
+
+          )}
 
       </main>
 
-      {/* AI Assistant */}
+      {/* AI ASSISTANT */}
+
       <aside className="assistant">
+
         <div className="assistant-header">
+
           <div>
-            <h2>🤖 AI Assistant</h2>
-            <span>Ready to help</span>
+
+            <h2>
+              🤖 AI Assistant
+            </h2>
+
+            <span>
+              Ready to help
+            </span>
+
           </div>
+
           <div className="status-dot"></div>
+
         </div>
 
         <div className="assistant-messages">
+
           <div className="ai-message">
+
             Hi! 👋 I can help you manage your emails.
+
           </div>
 
           <div className="suggestions">
-            <button>
+
+            <button
+              onClick={() =>
+                handleAICommand(
+                  "Show unread emails"
+                )
+              }
+            >
               Show unread emails
             </button>
 
-            <button>
+            <button
+              onClick={() =>
+                handleAICommand(
+                  "Find recent emails"
+                )
+              }
+            >
               Find recent emails
             </button>
 
-            <button>
+            <button
+              onClick={() =>
+                setShowCompose(true)
+              }
+            >
               Compose an email
             </button>
+
           </div>
+
         </div>
 
         <div className="assistant-input">
+
           <input
             type="text"
             placeholder="Ask AI to manage your mail..."
+            value={aiInput}
+            onChange={(e) =>
+              setAiInput(e.target.value)
+            }
+            onKeyDown={(e) => {
+
+              if (e.key === "Enter") {
+                handleAICommand(aiInput);
+              }
+
+            }}
           />
-          <button>➤</button>
+
+          <button
+            onClick={() =>
+              handleAICommand(aiInput)
+            }
+          >
+            ➤
+          </button>
+
         </div>
+
       </aside>
 
-      {/* Compose Modal */}
+      {/* COMPOSE MODAL */}
+
       {showCompose && (
+
         <div className="modal-overlay">
+
           <div className="compose-modal">
 
             <div className="compose-header">
-              <h2>New Message</h2>
+
+              <h2>
+                New Message
+              </h2>
 
               <button
-                onClick={() => setShowCompose(false)}
+                onClick={() =>
+                  setShowCompose(false)
+                }
               >
                 ✕
               </button>
+
             </div>
 
             <input
@@ -291,9 +514,12 @@ function App() {
             />
 
             <div className="compose-actions">
+
               <button
                 className="secondary-button"
-                onClick={() => setShowCompose(false)}
+                onClick={() =>
+                  setShowCompose(false)
+                }
               >
                 Cancel
               </button>
@@ -301,16 +527,24 @@ function App() {
               <button
                 className="send-button"
                 onClick={() => {
-                  alert("Send functionality will be connected to Gmail next.");
+
+                  alert(
+                    "Send functionality will be connected to Gmail next."
+                  );
+
                   setShowCompose(false);
+
                 }}
               >
                 Send ✈
               </button>
+
             </div>
 
           </div>
+
         </div>
+
       )}
 
     </div>
