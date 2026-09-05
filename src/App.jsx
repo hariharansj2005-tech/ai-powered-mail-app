@@ -1,295 +1,991 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
+const API_URL = "http://localhost:5000";
+
 function App() {
-  const [emails] = useState([
-    {
-      id: 1,
-      sender: "Sarah Johnson",
-      subject: "Project Update",
-      preview: "Here is the latest update about our project...",
-      time: "Today, 9:30 AM",
-      unread: true,
-    },
-    {
-      id: 2,
-      sender: "David Miller",
-      subject: "Meeting Tomorrow",
-      preview: "Are we still meeting tomorrow at 3 PM?",
-      time: "Today, 8:15 AM",
-      unread: true,
-    },
-    {
-      id: 3,
-      sender: "Google",
-      subject: "Security Alert",
-      preview: "A new sign-in was detected on your account.",
-      time: "Yesterday",
-      unread: false,
-    },
-  ]);
-
-  const [aiMessage, setAiMessage] = useState(
-    "Hi! 👋 I can help you manage your emails."
-  );
-
+  const [emails, setEmails] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
+
+  const [composeData, setComposeData] = useState({
+    to: "",
+    subject: "",
+    body: "",
+  });
 
   const [userCommand, setUserCommand] = useState("");
 
-  const handleAICommand = (command) => {
-    if (command === "unread") {
-      const unreadEmails = emails.filter((email) => email.unread);
+  const [aiMessage, setAiMessage] = useState(
+    "Hello! I can help you manage your email."
+  );
 
-      if (unreadEmails.length === 0) {
-        setAiMessage("You have no unread emails.");
-      } else {
-        setAiMessage(
-          `You have ${unreadEmails.length} unread emails: ${unreadEmails
-            .map((email) => email.subject)
-            .join(", ")}.`
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // -----------------------------------------
+  // LOAD REAL GMAIL INBOX
+  // -----------------------------------------
+
+  const loadEmails = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/api/gmail/messages`
+      );
+
+      const responseText = await response.text();
+
+      let data;
+
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(
+          `Backend returned an invalid response. HTTP status: ${response.status}`
         );
       }
-    }
 
-    if (command === "recent") {
-      setAiMessage(
-        `Your recent emails are: ${emails
-          .map((email) => email.subject)
-          .join(", ")}.`
-      );
-    }
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Unable to load Gmail messages."
+        );
+      }
 
-    if (command === "compose") {
-      setShowCompose(true);
-      setAiMessage("Sure! Let's compose a new email.");
+      if (!data.connected) {
+        throw new Error("Gmail is not connected.");
+      }
+
+      setEmails(data.messages || []);
+    } catch (err) {
+      console.error("Load Gmail error:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // Load emails when app starts
+  useEffect(() => {
+    loadEmails();
+  }, []);
+
+  // -----------------------------------------
+  // OPEN BLANK COMPOSE
+  // -----------------------------------------
+
+  const openBlankCompose = () => {
+    setComposeData({
+      to: "",
+      subject: "",
+      body: "",
+    });
+
+    setShowCompose(true);
+  };
+
+  // -----------------------------------------
+  // CLEAN TEXT
+  // -----------------------------------------
+
+  const cleanText = (text) => {
+    return text
+      .replace(/^["']|["']$/g, "")
+      .trim();
+  };
+
+  // -----------------------------------------
+  // AI COMMAND HANDLING
+  // -----------------------------------------
+
   const sendAICommand = () => {
-    const command = userCommand.toLowerCase().trim();
+    const command = userCommand.trim();
 
-    // UNREAD EMAIL COMMANDS
+    if (!command) {
+      return;
+    }
+
+    const lower = command.toLowerCase();
+
+    // -----------------------------------------
+    // SHOW UNREAD EMAILS
+    // -----------------------------------------
+
     if (
-      command.includes("unread") ||
-      command.includes("not read") ||
-      command.includes("unread mail") ||
-      command.includes("unread emails") ||
-      command.includes("unread messages")
+      lower.includes("unread") ||
+      lower.includes("show unread") ||
+      lower.includes("unread emails")
     ) {
-      handleAICommand("unread");
-    }
-
-    // RECENT EMAIL COMMANDS
-    else if (
-      command.includes("recent") ||
-      command.includes("latest emails") ||
-      command.includes("latest mail") ||
-      command.includes("latest messages") ||
-      command.includes("new emails") ||
-      command.includes("recent mail")
-    ) {
-      handleAICommand("recent");
-    }
-
-    // COMPOSE EMAIL COMMANDS
-    else if (
-      command.includes("compose") ||
-      command.includes("write an email") ||
-      command.includes("write email") ||
-      command.includes("new email") ||
-      command.includes("create an email") ||
-      command.includes("create new email") ||
-      command.includes("send an email")
-    ) {
-      handleAICommand("compose");
-    }
-
-    // EMPTY COMMAND
-    else if (command === "") {
-      setAiMessage("Please type a command.");
-    }
-
-    // UNKNOWN COMMAND
-    else {
-      setAiMessage(
-        "I don't understand that yet. Try asking about unread emails, recent emails, or composing an email."
+      const unreadEmails = emails.filter(
+        (email) => email.unread
       );
+
+      if (unreadEmails.length > 0) {
+        setSearchText("");
+
+        setAiMessage(
+          `I found ${unreadEmails.length} unread email${
+            unreadEmails.length > 1 ? "s" : ""
+          }.`
+        );
+      } else {
+        setSearchText("");
+
+        setAiMessage(
+          "You don't have any unread emails."
+        );
+      }
+
+      setUserCommand("");
+      return;
     }
+
+    // -----------------------------------------
+    // SHOW RECENT EMAILS
+    // -----------------------------------------
+
+    if (
+      lower.includes("recent") ||
+      lower.includes("latest") ||
+      lower.includes("new emails")
+    ) {
+      setSearchText("");
+
+      setAiMessage(
+        "I'm showing your latest Gmail messages."
+      );
+
+      setUserCommand("");
+      return;
+    }
+
+    // -----------------------------------------
+    // COMPOSE EMAIL
+    // -----------------------------------------
+
+    const composeIntent =
+      lower.includes("send an email") ||
+      lower.includes("compose an email") ||
+      lower.includes("write an email") ||
+      lower.includes("compose email") ||
+      lower.includes("write email");
+
+    if (composeIntent) {
+      let to = "";
+      let subject = "";
+      let body = "";
+
+      // Find email address
+      const emailMatch = command.match(
+        /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+      );
+
+      if (emailMatch) {
+        to = emailMatch[0];
+      }
+
+      // Find subject
+      const subjectMatch = command.match(
+        /subject\s+(.+?)(?:\s+and\s+body\s+|\s+body\s+|$)/i
+      );
+
+      if (subjectMatch) {
+        subject = cleanText(subjectMatch[1]);
+      }
+
+      // Find body
+      const bodyMatch = command.match(
+        /body\s+(.+)$/i
+      );
+
+      if (bodyMatch) {
+        body = cleanText(bodyMatch[1]);
+      }
+
+      setComposeData({
+        to,
+        subject,
+        body,
+      });
+
+      setShowCompose(true);
+
+      setAiMessage(
+        "I prepared the email for you. Please review it before sending."
+      );
+
+      setUserCommand("");
+      return;
+    }
+
+    // -----------------------------------------
+    // SEARCH EMAILS
+    // -----------------------------------------
+
+    if (
+      lower.includes("search") ||
+      lower.includes("find") ||
+      lower.includes("show emails")
+    ) {
+      let searchValue = command
+        .replace(/^search\s+/i, "")
+        .replace(/^find\s+/i, "")
+        .replace(/^show emails\s+/i, "")
+        .trim();
+
+      searchValue = cleanText(searchValue);
+
+      if (searchValue) {
+        setSearchText(searchValue);
+
+        setAiMessage(
+          `Showing emails matching "${searchValue}".`
+        );
+      } else {
+        setAiMessage(
+          "Please tell me what you want me to search for."
+        );
+      }
+
+      setUserCommand("");
+      return;
+    }
+
+    // -----------------------------------------
+    // UNKNOWN COMMAND
+    // -----------------------------------------
+
+    setAiMessage(
+      "I can help you search emails, show unread emails, or compose an email."
+    );
 
     setUserCommand("");
   };
 
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="logo">
-          <div className="logo-icon">✉</div>
+  // -----------------------------------------
+  // SEND REAL GMAIL EMAIL
+  // -----------------------------------------
 
-          <div>
-            <h2>AI Mail</h2>
-            <p>Smart Email</p>
-          </div>
+  const sendEmail = async () => {
+    if (!composeData.to.trim()) {
+      alert(
+        "Please enter a recipient email address."
+      );
+      return;
+    }
+
+    if (!composeData.subject.trim()) {
+      alert("Please enter a subject.");
+      return;
+    }
+
+    if (!composeData.body.trim()) {
+      alert("Please enter the email body.");
+      return;
+    }
+
+    try {
+      setSending(true);
+
+      console.log("Sending email:", composeData);
+
+      const response = await fetch(
+        `${API_URL}/api/gmail/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: composeData.to.trim(),
+            subject: composeData.subject.trim(),
+            body: composeData.body.trim(),
+          }),
+        }
+      );
+
+      // Read response as TEXT first.
+      // This prevents JSON.parse errors from hiding
+      // the actual backend response.
+      const responseText = await response.text();
+
+      console.log(
+        "Backend response:",
+        response.status,
+        responseText
+      );
+
+      let data;
+
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error(
+          "JSON parse error:",
+          parseError
+        );
+
+        throw new Error(
+          `Backend returned an invalid response. HTTP ${response.status}.`
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            data.error ||
+            "Unable to send email."
+        );
+      }
+
+      if (!data.success) {
+        throw new Error(
+          data.message ||
+            "Email was not sent."
+        );
+      }
+
+      // SUCCESS
+      alert("✅ Email sent successfully!");
+
+      setAiMessage(
+        "Your email was sent successfully through Gmail."
+      );
+
+      setShowCompose(false);
+
+      setComposeData({
+        to: "",
+        subject: "",
+        body: "",
+      });
+
+    } catch (err) {
+      console.error(
+        "Send email error:",
+        err
+      );
+
+      alert(
+        `Failed to send email: ${err.message}`
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // -----------------------------------------
+  // FILTER EMAILS
+  // -----------------------------------------
+
+  const filteredEmails = emails.filter(
+    (email) => {
+      if (!searchText.trim()) {
+        return true;
+      }
+
+      const search =
+        searchText.toLowerCase();
+
+      return (
+        email.from
+          ?.toLowerCase()
+          .includes(search) ||
+        email.to
+          ?.toLowerCase()
+          .includes(search) ||
+        email.subject
+          ?.toLowerCase()
+          .includes(search) ||
+        email.snippet
+          ?.toLowerCase()
+          .includes(search)
+      );
+    }
+  );
+
+  // -----------------------------------------
+  // GET SENDER NAME
+  // -----------------------------------------
+
+  const getSenderName = (from) => {
+    if (!from) {
+      return "Unknown sender";
+    }
+
+    const match = from.match(
+      /^"?([^"<]+)"?\s*</
+    );
+
+    if (match) {
+      return match[1].trim();
+    }
+
+    return from;
+  };
+
+  // -----------------------------------------
+  // UI
+  // -----------------------------------------
+
+  return (
+    <div className="mail-app">
+
+      {/* =====================================
+          SIDEBAR
+      ====================================== */}
+
+      <aside className="sidebar">
+
+        <div className="logo">
+          ✉️ AI Mail
         </div>
 
         <button
           className="compose-button"
-          onClick={() => handleAICommand("compose")}
+          onClick={openBlankCompose}
         >
-          + Compose
+          ＋ Compose
         </button>
 
-        <div className="menu">
-          <div className="menu-item active">
-            📥 Inbox <span>{emails.length}</span>
-          </div>
+        <nav>
 
-          <div className="menu-item">
+          <button className="nav-item active">
+            📥 Inbox
+            <span>{emails.length}</span>
+          </button>
+
+          <button className="nav-item">
             📤 Sent
-          </div>
+          </button>
+
+          <button className="nav-item">
+            ⭐ Starred
+          </button>
+
+          <button className="nav-item">
+            🗑️ Trash
+          </button>
+
+        </nav>
+
+        <div className="sidebar-bottom">
+
+          <button
+            className="connect-button"
+            onClick={() => {
+              window.location.href =
+                `${API_URL}/auth/google`;
+            }}
+          >
+            🔗 Connect Gmail
+          </button>
+
         </div>
 
-        <div className="settings">
-          ⚙ Settings
-        </div>
       </aside>
+
+      {/* =====================================
+          MAIN CONTENT
+      ====================================== */}
 
       <main className="main-content">
-        <div className="inbox-header">
+
+        {/* HEADER */}
+
+        <header className="top-bar">
+
           <div>
             <h1>Inbox</h1>
-            <p>Your latest messages</p>
+
+            <p>
+              Real Gmail messages
+            </p>
           </div>
 
-          <div className="header-icons">
-            🔍 🔔
-          </div>
-        </div>
+          <button
+            className="refresh-button"
+            onClick={loadEmails}
+            disabled={loading}
+          >
+            🔄 {loading ? "Loading..." : "Refresh"}
+          </button>
 
-        <div className="email-list">
-          {emails.map((email) => (
-            <div className="email-card" key={email.id}>
-              <div className="avatar">
-                {email.sender.charAt(0)}
-              </div>
+        </header>
 
-              <div className="email-content">
-                <div className="email-top">
-                  <strong>{email.sender}</strong>
-                  <span>{email.time}</span>
-                </div>
+        {/* SEARCH */}
 
-                <h3>{email.subject}</h3>
+        <div className="search-box">
 
-                <p>{email.preview}</p>
-              </div>
+          <span>🔍</span>
 
-              {email.unread && (
-                <div className="unread-dot"></div>
-              )}
-            </div>
-          ))}
-        </div>
-      </main>
-
-      <aside className="ai-panel">
-        <div className="ai-header">
-          <div>
-            <h2>🤖 AI Assistant</h2>
-            <p>Ready to help</p>
-          </div>
-
-          <div className="online-dot"></div>
-        </div>
-
-        <div className="ai-message">
-          {aiMessage}
-        </div>
-
-        <button
-          className="ai-command"
-          onClick={() => handleAICommand("unread")}
-        >
-          Show unread emails
-        </button>
-
-        <button
-          className="ai-command"
-          onClick={() => handleAICommand("recent")}
-        >
-          Find recent emails
-        </button>
-
-        <button
-          className="ai-command"
-          onClick={() => handleAICommand("compose")}
-        >
-          Compose an email
-        </button>
-
-        <div className="ai-input">
           <input
             type="text"
-            value={userCommand}
-            onChange={(e) => setUserCommand(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                sendAICommand();
-              }
-            }}
-            placeholder="Ask AI to manage your mail..."
+            placeholder="Search emails..."
+            value={searchText}
+            onChange={(e) =>
+              setSearchText(e.target.value)
+            }
           />
 
-          <button onClick={sendAICommand}>
-            ➤
-          </button>
         </div>
-      </aside>
+
+        {/* ERROR */}
+
+        {error && (
+          <div className="error-message">
+            ❌ {error}
+          </div>
+        )}
+
+        {/* LOADING */}
+
+        {loading ? (
+
+          <div className="empty-state">
+
+            <h2>
+              Loading Gmail...
+            </h2>
+
+            <p>
+              Fetching your real inbox messages.
+            </p>
+
+          </div>
+
+        ) : (
+
+          <div className="mail-layout">
+
+            {/* =================================
+                EMAIL LIST
+            ================================== */}
+
+            <section className="email-list">
+
+              {filteredEmails.length === 0 ? (
+
+                <div className="empty-state">
+
+                  <h2>
+                    No emails found
+                  </h2>
+
+                  <p>
+                    Try another search.
+                  </p>
+
+                </div>
+
+              ) : (
+
+                filteredEmails.map(
+                  (email) => (
+
+                    <button
+                      key={email.id}
+                      className={`email-row ${
+                        email.unread
+                          ? "unread"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setSelectedEmail(email)
+                      }
+                    >
+
+                      {/* AVATAR */}
+
+                      <div className="email-avatar">
+
+                        {getSenderName(
+                          email.from
+                        )
+                          .charAt(0)
+                          .toUpperCase()}
+
+                      </div>
+
+                      {/* EMAIL CONTENT */}
+
+                      <div className="email-content">
+
+                        <div className="email-top">
+
+                          <strong>
+                            {getSenderName(
+                              email.from
+                            )}
+                          </strong>
+
+                          <span>
+                            {email.date
+                              ? new Date(
+                                  email.date
+                                ).toLocaleString()
+                              : ""}
+                          </span>
+
+                        </div>
+
+                        <div className="email-subject">
+
+                          {email.subject ||
+                            "(No subject)"}
+
+                        </div>
+
+                        <div className="email-snippet">
+
+                          {email.snippet}
+
+                        </div>
+
+                      </div>
+
+                      {/* UNREAD DOT */}
+
+                      {email.unread && (
+                        <div className="unread-dot"></div>
+                      )}
+
+                    </button>
+
+                  )
+                )
+
+              )}
+
+            </section>
+
+            {/* =================================
+                EMAIL DETAIL
+            ================================== */}
+
+            <section className="email-detail">
+
+              {selectedEmail ? (
+
+                <div>
+
+                  <button
+                    className="close-detail"
+                    onClick={() =>
+                      setSelectedEmail(null)
+                    }
+                  >
+                    ← Back
+                  </button>
+
+                  <h2>
+                    {selectedEmail.subject ||
+                      "(No subject)"}
+                  </h2>
+
+                  <div className="detail-sender">
+
+                    <strong>
+                      {getSenderName(
+                        selectedEmail.from
+                      )}
+                    </strong>
+
+                    <span>
+                      {selectedEmail.from}
+                    </span>
+
+                  </div>
+
+                  <div className="detail-info">
+
+                    To:{" "}
+                    {selectedEmail.to}
+
+                  </div>
+
+                  <div className="detail-info">
+
+                    {selectedEmail.date}
+
+                  </div>
+
+                  <hr />
+
+                  <p className="detail-body">
+
+                    {selectedEmail.snippet}
+
+                  </p>
+
+                  {/* REPLY */}
+
+                  <button
+                    className="reply-button"
+                    onClick={() => {
+
+                      setComposeData({
+                        to: selectedEmail.from,
+                        subject: `Re: ${
+                          selectedEmail.subject ||
+                          ""
+                        }`,
+                        body: "",
+                      });
+
+                      setShowCompose(true);
+
+                    }}
+                  >
+                    ↩️ Reply
+                  </button>
+
+                </div>
+
+              ) : (
+
+                <div className="empty-detail">
+
+                  <div>📧</div>
+
+                  <h2>
+                    Select an email
+                  </h2>
+
+                  <p>
+                    Choose an email from your real
+                    Gmail inbox.
+                  </p>
+
+                </div>
+
+              )}
+
+            </section>
+
+          </div>
+
+        )}
+
+        {/* =====================================
+            AI ASSISTANT
+        ====================================== */}
+
+        <section className="ai-assistant">
+
+          <div className="ai-header">
+
+            <div>
+
+              <strong>
+                🤖 AI Assistant
+              </strong>
+
+              <p>
+                {aiMessage}
+              </p>
+
+            </div>
+
+          </div>
+
+          {/* AI INPUT */}
+
+          <div className="ai-input">
+
+            <input
+              type="text"
+              placeholder='Try: "Show my unread emails"'
+              value={userCommand}
+              onChange={(e) =>
+                setUserCommand(
+                  e.target.value
+                )
+              }
+              onKeyDown={(e) => {
+
+                if (e.key === "Enter") {
+                  sendAICommand();
+                }
+
+              }}
+            />
+
+            <button
+              onClick={sendAICommand}
+            >
+              Send
+            </button>
+
+          </div>
+
+          {/* QUICK COMMANDS */}
+
+          <div className="quick-commands">
+
+            <button
+              onClick={() => {
+
+                const unreadCount =
+                  emails.filter(
+                    (email) =>
+                      email.unread
+                  ).length;
+
+                setSearchText("");
+
+                setAiMessage(
+                  `You have ${unreadCount} unread email${
+                    unreadCount !== 1
+                      ? "s"
+                      : ""
+                  }.`
+                );
+
+              }}
+            >
+              Show unread
+            </button>
+
+            <button
+              onClick={() => {
+
+                setSearchText("");
+
+                setAiMessage(
+                  "Showing your recent Gmail messages."
+                );
+
+              }}
+            >
+              Recent emails
+            </button>
+
+            <button
+              onClick={openBlankCompose}
+            >
+              Compose email
+            </button>
+
+          </div>
+
+        </section>
+
+      </main>
+
+      {/* =====================================
+          COMPOSE MODAL
+      ====================================== */}
 
       {showCompose && (
-        <div className="compose-overlay">
-          <div className="compose-box">
+
+        <div className="modal-overlay">
+
+          <div className="compose-modal">
+
+            {/* COMPOSE HEADER */}
 
             <div className="compose-header">
-              <h2>Compose Email</h2>
+
+              <h2>
+                New Email
+              </h2>
 
               <button
-                onClick={() => setShowCompose(false)}
+                onClick={() => {
+
+                  if (!sending) {
+                    setShowCompose(false);
+                  }
+
+                }}
+                disabled={sending}
               >
                 ✕
               </button>
+
             </div>
+
+            {/* TO */}
 
             <input
               type="email"
               placeholder="To"
+              value={composeData.to}
+              onChange={(e) =>
+                setComposeData({
+                  ...composeData,
+                  to: e.target.value,
+                })
+              }
+              disabled={sending}
             />
+
+            {/* SUBJECT */}
 
             <input
               type="text"
               placeholder="Subject"
+              value={composeData.subject}
+              onChange={(e) =>
+                setComposeData({
+                  ...composeData,
+                  subject: e.target.value,
+                })
+              }
+              disabled={sending}
             />
 
-            <textarea
-              placeholder="Write your email..."
-              rows="8"
-            ></textarea>
+            {/* BODY */}
 
-            <button
-              className="send-button"
-              onClick={() => {
-                alert("Email ready to send!");
-                setShowCompose(false);
-              }}
-            >
-              Send Email
-            </button>
+            <textarea
+              placeholder="Write your message..."
+              value={composeData.body}
+              onChange={(e) =>
+                setComposeData({
+                  ...composeData,
+                  body: e.target.value,
+                })
+              }
+              disabled={sending}
+            />
+
+            {/* ACTIONS */}
+
+            <div className="compose-actions">
+
+              <button
+                onClick={() =>
+                  setShowCompose(false)
+                }
+                disabled={sending}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="send-button"
+                onClick={sendEmail}
+                disabled={sending}
+              >
+                {sending
+                  ? "Sending..."
+                  : "📤 Send Email"}
+              </button>
+
+            </div>
 
           </div>
+
         </div>
+
       )}
+
     </div>
   );
 }
-
 export default App;
