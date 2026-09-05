@@ -69,29 +69,51 @@ function App() {
   const sendAICommand = () => {
     const command = userCommand.toLowerCase().trim();
 
+    // UNREAD EMAIL COMMANDS
     if (
-      command.includes("show unread") ||
+      command.includes("unread") ||
+      command.includes("not read") ||
+      command.includes("unread mail") ||
       command.includes("unread emails") ||
-      command.includes("unread mail")
+      command.includes("unread messages")
     ) {
       handleAICommand("unread");
-    } else if (
-      command.includes("find recent") ||
-      command.includes("recent emails") ||
+    }
+
+    // RECENT EMAIL COMMANDS
+    else if (
+      command.includes("recent") ||
+      command.includes("latest emails") ||
+      command.includes("latest mail") ||
+      command.includes("latest messages") ||
+      command.includes("new emails") ||
       command.includes("recent mail")
     ) {
       handleAICommand("recent");
-    } else if (
+    }
+
+    // COMPOSE EMAIL COMMANDS
+    else if (
       command.includes("compose") ||
       command.includes("write an email") ||
-      command.includes("new email")
+      command.includes("write email") ||
+      command.includes("new email") ||
+      command.includes("create an email") ||
+      command.includes("create new email") ||
+      command.includes("send an email")
     ) {
       handleAICommand("compose");
-    } else if (command === "") {
+    }
+
+    // EMPTY COMMAND
+    else if (command === "") {
       setAiMessage("Please type a command.");
-    } else {
+    }
+
+    // UNKNOWN COMMAND
+    else {
       setAiMessage(
-        "I don't understand that command yet. Try: show unread emails, find recent emails, or compose an email."
+        "I don't understand that yet. Try asking about unread emails, recent emails, or composing an email."
       );
     }
 
@@ -103,6 +125,7 @@ function App() {
       <aside className="sidebar">
         <div className="logo">
           <div className="logo-icon">✉</div>
+
           <div>
             <h2>AI Mail</h2>
             <p>Smart Email</p>
@@ -121,10 +144,14 @@ function App() {
             📥 Inbox <span>{emails.length}</span>
           </div>
 
-          <div className="menu-item">📤 Sent</div>
+          <div className="menu-item">
+            📤 Sent
+          </div>
         </div>
 
-        <div className="settings">⚙ Settings</div>
+        <div className="settings">
+          ⚙ Settings
+        </div>
       </aside>
 
       <main className="main-content">
@@ -134,7 +161,9 @@ function App() {
             <p>Your latest messages</p>
           </div>
 
-          <div className="header-icons">🔍 🔔</div>
+          <div className="header-icons">
+            🔍 🔔
+          </div>
         </div>
 
         <div className="email-list">
@@ -151,10 +180,13 @@ function App() {
                 </div>
 
                 <h3>{email.subject}</h3>
+
                 <p>{email.preview}</p>
               </div>
 
-              {email.unread && <div className="unread-dot"></div>}
+              {email.unread && (
+                <div className="unread-dot"></div>
+              )}
             </div>
           ))}
         </div>
@@ -208,24 +240,35 @@ function App() {
             placeholder="Ask AI to manage your mail..."
           />
 
-          <button onClick={sendAICommand}>➤</button>
+          <button onClick={sendAICommand}>
+            ➤
+          </button>
         </div>
       </aside>
 
       {showCompose && (
         <div className="compose-overlay">
           <div className="compose-box">
+
             <div className="compose-header">
               <h2>Compose Email</h2>
 
-              <button onClick={() => setShowCompose(false)}>
+              <button
+                onClick={() => setShowCompose(false)}
+              >
                 ✕
               </button>
             </div>
 
-            <input type="email" placeholder="To" />
+            <input
+              type="email"
+              placeholder="To"
+            />
 
-            <input type="text" placeholder="Subject" />
+            <input
+              type="text"
+              placeholder="Subject"
+            />
 
             <textarea
               placeholder="Write your email..."
@@ -241,6 +284,7 @@ function App() {
             >
               Send Email
             </button>
+
           </div>
         </div>
       )}
