@@ -1,359 +1,561 @@
-import { useEffect, useState } from "react";
-import "./App.css";
+import { useEffect, useRef, useState } from "react";
 
 const API_URL = "http://localhost:5000";
 
 function App() {
+  // ---------------------------------------
+  // State
+  // ---------------------------------------
+
   const [emails, setEmails] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState(null);
+
+  const [currentFolder, setCurrentFolder] = useState("inbox");
+  const [viewFilter, setViewFilter] = useState("all");
+
   const [showCompose, setShowCompose] = useState(false);
 
   const [composeData, setComposeData] = useState({
     to: "",
     subject: "",
     body: "",
+    threadId: "",
+    inReplyTo: "",
+    references: "",
   });
 
   const [userCommand, setUserCommand] = useState("");
+  const [aiMessage, setAiMessage] = useState("");
 
-  const [aiMessage, setAiMessage] = useState(
-    "Hello! I can help you manage your email."
-  );
+  const [loading, setLoading] = useState(false);
+  const [openingEmail, setOpeningEmail] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchText, setSearchText] = useState("");
-  const [sending, setSending] = useState(false);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
 
-  // -----------------------------------------
-  // LOAD REAL GMAIL INBOX
-  // -----------------------------------------
+  const skipNextFolderLoad = useRef(false);
 
-  const loadEmails = async () => {
+  // ---------------------------------------
+  // API helper
+  // ---------------------------------------
+
+  async function parseResponse(response) {
+    const text = await response.text();
+
+    let data = {};
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(
+        text || `Server returned HTTP ${response.status}`
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || `Request failed with HTTP ${response.status}`
+      );
+    }
+
+    return data;
+  }
+
+  // ---------------------------------------
+  // Support both API response formats
+  // ---------------------------------------
+
+  function getMessageList(data) {
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    if (Array.isArray(data?.messages)) {
+      return data.messages;
+    }
+
+    return [];
+  }
+
+  // ---------------------------------------
+  // Load Inbox
+  // ---------------------------------------
+
+  async function loadEmails(query = "") {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        `${API_URL}/api/gmail/messages`
-      );
+      const url = query
+        ? `${API_URL}/api/gmail/messages?q=${encodeURIComponent(query)}`
+        : `${API_URL}/api/gmail/messages`;
 
-      const responseText = await response.text();
+      const response = await fetch(url);
+      const data = await parseResponse(response);
 
-      let data;
+      const messageList = getMessageList(data);
 
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        throw new Error(
-          `Backend returned an invalid response. HTTP status: ${response.status}`
-        );
-      }
+      console.log("Inbox emails received:", messageList);
 
-      if (!response.ok) {
-        throw new Error(
-          data.message || "Unable to load Gmail messages."
-        );
-      }
+      setEmails(messageList);
 
-      if (!data.connected) {
-        throw new Error("Gmail is not connected.");
-      }
-
-      setEmails(data.messages || []);
+      return messageList;
     } catch (err) {
-      console.error("Load Gmail error:", err);
+      console.error("Inbox error:", err);
       setError(err.message);
+      return [];
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  // Load emails when app starts
+  // ---------------------------------------
+  // Load Sent
+  // ---------------------------------------
+
+  async function loadSentEmails() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch(`${API_URL}/api/gmail/sent`);
+      const data = await parseResponse(response);
+
+      const messageList = getMessageList(data);
+
+      console.log("Sent emails received:", messageList);
+
+      setEmails(messageList);
+
+      return messageList;
+    } catch (err) {
+      console.error("Sent error:", err);
+      setError(err.message);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ---------------------------------------
+  // Folder Load
+  // ---------------------------------------
+
   useEffect(() => {
-    loadEmails();
-  }, []);
+    if (skipNextFolderLoad.current) {
+      skipNextFolderLoad.current = false;
+      return;
+    }
 
-  // -----------------------------------------
-  // OPEN BLANK COMPOSE
-  // -----------------------------------------
+    setSelectedEmail(null);
+    setViewFilter("all");
+    setSearchText("");
 
-  const openBlankCompose = () => {
+    if (currentFolder === "inbox") {
+      loadEmails();
+    } else if (currentFolder === "sent") {
+      loadSentEmails();
+    }
+  }, [currentFolder]);
+
+  // ---------------------------------------
+  // REAL-TIME GMAIL → PUB/SUB → REACT
+  // ---------------------------------------
+
+  useEffect(() => {
+    const eventSource = new EventSource(
+      `${API_URL}/api/events`
+    );
+
+    eventSource.onopen = () => {
+      console.log("Real-time connection established.");
+      setRealtimeConnected(true);
+    };
+
+    eventSource.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        console.log("Real-time event:", data);
+
+        if (data.type === "connected") {
+          setRealtimeConnected(true);
+          return;
+        }
+
+        if (data.type === "mailbox_updated") {
+          console.log(
+            "Mailbox changed. Refreshing current folder..."
+          );
+
+          if (currentFolder === "inbox") {
+            if (!selectedEmail && !showCompose) {
+              await loadEmails();
+              setAiMessage(
+                "Inbox updated automatically from Gmail."
+              );
+            }
+          } else if (currentFolder === "sent") {
+            if (!selectedEmail && !showCompose) {
+              await loadSentEmails();
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          "Real-time event error:",
+          err
+        );
+      }
+    };
+
+    eventSource.onerror = () => {
+      console.warn(
+        "Real-time connection interrupted."
+      );
+
+      setRealtimeConnected(false);
+    };
+
+    return () => {
+      eventSource.close();
+      setRealtimeConnected(false);
+    };
+  }, [
+    currentFolder,
+    selectedEmail,
+    showCompose,
+  ]);
+
+  // ---------------------------------------
+  // Fallback Inbox Refresh
+  // ---------------------------------------
+
+  useEffect(() => {
+    if (currentFolder !== "inbox") {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (
+        !selectedEmail &&
+        !showCompose
+      ) {
+        loadEmails();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [
+    currentFolder,
+    selectedEmail,
+    showCompose,
+  ]);
+
+  // ---------------------------------------
+  // Compose
+  // ---------------------------------------
+
+  function openBlankCompose() {
+    setError("");
+
     setComposeData({
       to: "",
       subject: "",
       body: "",
+      threadId: "",
+      inReplyTo: "",
+      references: "",
     });
 
     setShowCompose(true);
-  };
+  }
 
-  // -----------------------------------------
-  // CLEAN TEXT
-  // -----------------------------------------
+  // ---------------------------------------
+  // Extract email address
+  // ---------------------------------------
 
-  const cleanText = (text) => {
-    return text
-      .replace(/^["']|["']$/g, "")
-      .trim();
-  };
-
-  // -----------------------------------------
-  // AI COMMAND HANDLING
-  // -----------------------------------------
-
-  const sendAICommand = () => {
-    const command = userCommand.trim();
-
-    if (!command) {
-      return;
+  function extractEmailAddress(value) {
+    if (!value) {
+      return "";
     }
 
-    const lower = command.toLowerCase();
-
-    // -----------------------------------------
-    // SHOW UNREAD EMAILS
-    // -----------------------------------------
-
-    if (
-      lower.includes("unread") ||
-      lower.includes("show unread") ||
-      lower.includes("unread emails")
-    ) {
-      const unreadEmails = emails.filter(
-        (email) => email.unread
-      );
-
-      if (unreadEmails.length > 0) {
-        setSearchText("");
-
-        setAiMessage(
-          `I found ${unreadEmails.length} unread email${
-            unreadEmails.length > 1 ? "s" : ""
-          }.`
-        );
-      } else {
-        setSearchText("");
-
-        setAiMessage(
-          "You don't have any unread emails."
-        );
-      }
-
-      setUserCommand("");
-      return;
-    }
-
-    // -----------------------------------------
-    // SHOW RECENT EMAILS
-    // -----------------------------------------
-
-    if (
-      lower.includes("recent") ||
-      lower.includes("latest") ||
-      lower.includes("new emails")
-    ) {
-      setSearchText("");
-
-      setAiMessage(
-        "I'm showing your latest Gmail messages."
-      );
-
-      setUserCommand("");
-      return;
-    }
-
-    // -----------------------------------------
-    // COMPOSE EMAIL
-    // -----------------------------------------
-
-    const composeIntent =
-      lower.includes("send an email") ||
-      lower.includes("compose an email") ||
-      lower.includes("write an email") ||
-      lower.includes("compose email") ||
-      lower.includes("write email");
-
-    if (composeIntent) {
-      let to = "";
-      let subject = "";
-      let body = "";
-
-      // Find email address
-      const emailMatch = command.match(
-        /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
-      );
-
-      if (emailMatch) {
-        to = emailMatch[0];
-      }
-
-      // Find subject
-      const subjectMatch = command.match(
-        /subject\s+(.+?)(?:\s+and\s+body\s+|\s+body\s+|$)/i
-      );
-
-      if (subjectMatch) {
-        subject = cleanText(subjectMatch[1]);
-      }
-
-      // Find body
-      const bodyMatch = command.match(
-        /body\s+(.+)$/i
-      );
-
-      if (bodyMatch) {
-        body = cleanText(bodyMatch[1]);
-      }
-
-      setComposeData({
-        to,
-        subject,
-        body,
-      });
-
-      setShowCompose(true);
-
-      setAiMessage(
-        "I prepared the email for you. Please review it before sending."
-      );
-
-      setUserCommand("");
-      return;
-    }
-
-    // -----------------------------------------
-    // SEARCH EMAILS
-    // -----------------------------------------
-
-    if (
-      lower.includes("search") ||
-      lower.includes("find") ||
-      lower.includes("show emails")
-    ) {
-      let searchValue = command
-        .replace(/^search\s+/i, "")
-        .replace(/^find\s+/i, "")
-        .replace(/^show emails\s+/i, "")
-        .trim();
-
-      searchValue = cleanText(searchValue);
-
-      if (searchValue) {
-        setSearchText(searchValue);
-
-        setAiMessage(
-          `Showing emails matching "${searchValue}".`
-        );
-      } else {
-        setAiMessage(
-          "Please tell me what you want me to search for."
-        );
-      }
-
-      setUserCommand("");
-      return;
-    }
-
-    // -----------------------------------------
-    // UNKNOWN COMMAND
-    // -----------------------------------------
-
-    setAiMessage(
-      "I can help you search emails, show unread emails, or compose an email."
+    const match = value.match(
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
     );
 
-    setUserCommand("");
-  };
+    return match ? match[0] : value.trim();
+  }
 
-  // -----------------------------------------
-  // SEND REAL GMAIL EMAIL
-  // -----------------------------------------
+  // ---------------------------------------
+  // Open Email
+  // ---------------------------------------
 
-  const sendEmail = async () => {
-    if (!composeData.to.trim()) {
-      alert(
-        "Please enter a recipient email address."
-      );
-      return;
-    }
-
-    if (!composeData.subject.trim()) {
-      alert("Please enter a subject.");
-      return;
-    }
-
-    if (!composeData.body.trim()) {
-      alert("Please enter the email body.");
+  async function openEmail(email) {
+    if (!email?.id) {
       return;
     }
 
     try {
-      setSending(true);
-
-      console.log("Sending email:", composeData);
+      setOpeningEmail(true);
+      setError("");
 
       const response = await fetch(
-        `${API_URL}/api/gmail/send`,
+        `${API_URL}/api/gmail/messages/${email.id}`
+      );
+
+      const data = await parseResponse(response);
+
+      setSelectedEmail(data);
+
+      if (email.unread) {
+        try {
+          const readResponse = await fetch(
+            `${API_URL}/api/gmail/messages/${email.id}/read`,
+            {
+              method: "PATCH",
+            }
+          );
+
+          if (readResponse.ok) {
+            setEmails((previous) =>
+              previous.map((item) =>
+                item.id === email.id
+                  ? { ...item, unread: false }
+                  : item
+              )
+            );
+          }
+        } catch (readError) {
+          console.error(
+            "Read update error:",
+            readError
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        "Open email error:",
+        err
+      );
+
+      setError(err.message);
+    } finally {
+      setOpeningEmail(false);
+    }
+  }
+
+  // ---------------------------------------
+  // Close Email
+  // ---------------------------------------
+
+  function closeEmail() {
+    setSelectedEmail(null);
+  }
+
+  // ---------------------------------------
+  // Smart Reply
+  // ---------------------------------------
+
+  async function replyToEmail(email) {
+    try {
+      setError("");
+
+      setAiMessage(
+        "Gemini is reading the email and drafting a reply..."
+      );
+
+      setSending(true);
+
+      const response = await fetch(
+        `${API_URL}/api/ai/reply`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            to: composeData.to.trim(),
-            subject: composeData.subject.trim(),
-            body: composeData.body.trim(),
+            from: email.from,
+            subject: email.subject,
+            body:
+              email.body ||
+              email.snippet ||
+              "",
+            instruction:
+              "Write a professional, natural and concise reply to this email.",
           }),
         }
       );
 
-      // Read response as TEXT first.
-      // This prevents JSON.parse errors from hiding
-      // the actual backend response.
-      const responseText = await response.text();
+      const data = await parseResponse(response);
 
-      console.log(
-        "Backend response:",
-        response.status,
-        responseText
-      );
-
-      let data;
-
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error(
-          "JSON parse error:",
-          parseError
-        );
-
+      if (!data.reply) {
         throw new Error(
-          `Backend returned an invalid response. HTTP ${response.status}.`
+          "Gemini returned an empty reply."
         );
       }
 
-      if (!response.ok) {
-        throw new Error(
-          data.message ||
-            data.error ||
-            "Unable to send email."
-        );
+      const recipient =
+        extractEmailAddress(email.from);
+
+      let replySubject =
+        email.subject || "";
+
+      if (
+        !replySubject
+          .toLowerCase()
+          .startsWith("re:")
+      ) {
+        replySubject =
+          `Re: ${replySubject}`;
       }
 
-      if (!data.success) {
-        throw new Error(
-          data.message ||
-            "Email was not sent."
-        );
-      }
+      setComposeData({
+        to: recipient,
+        subject: replySubject,
+        body: data.reply,
+        threadId:
+          email.threadId || "",
+        inReplyTo:
+          email.messageId || "",
+        references:
+          email.references || "",
+      });
 
-      // SUCCESS
-      alert("✅ Email sent successfully!");
+      setShowCompose(true);
 
       setAiMessage(
-        "Your email was sent successfully through Gmail."
+        "Gemini generated a context-aware reply. Review it before sending."
+      );
+    } catch (err) {
+      console.error(
+        "AI reply error:",
+        err
+      );
+
+      setError(err.message);
+      setAiMessage("");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // ---------------------------------------
+  // Forward Email
+  // ---------------------------------------
+
+  function forwardEmail(email) {
+    if (!email) {
+      return;
+    }
+
+    const forwardSubject =
+      email.subject
+        ? email.subject
+            .toLowerCase()
+            .startsWith("fwd:")
+          ? email.subject
+          : `Fwd: ${email.subject}`
+        : "Fwd: No subject";
+
+    const originalMessage = `
+---------- Forwarded message ----------
+From: ${email.from || ""}
+Date: ${email.date || ""}
+Subject: ${email.subject || "No subject"}
+To: ${email.to || ""}
+
+${email.body || email.snippet || ""}
+
+---------- End forwarded message ----------
+`;
+
+    setComposeData({
+      to: "",
+      subject: forwardSubject,
+      body: `\n\n${originalMessage}`,
+      threadId: "",
+      inReplyTo: "",
+      references: "",
+    });
+
+    setShowCompose(true);
+
+    setAiMessage(
+      "Forward window opened. Enter the recipient and review the message before sending."
+    );
+  }
+
+  // ---------------------------------------
+  // Send Email
+  // ---------------------------------------
+
+  async function sendEmail() {
+    try {
+      setError("");
+
+      if (!composeData.to.trim()) {
+        setError(
+          "Please enter a recipient email address."
+        );
+        return;
+      }
+
+      if (!composeData.body.trim()) {
+        setError(
+          "Please enter an email message."
+        );
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `Are you sure you want to send this email?\n\n` +
+            `To: ${composeData.to}\n` +
+            `Subject: ${
+              composeData.subject ||
+              "(No subject)"
+            }`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setSending(true);
+
+      const response = await fetch(
+        `${API_URL}/api/gmail/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            to: composeData.to,
+            subject:
+              composeData.subject,
+            body: composeData.body,
+            threadId:
+              composeData.threadId,
+            inReplyTo:
+              composeData.inReplyTo,
+            references:
+              composeData.references,
+          }),
+        }
+      );
+
+      const data =
+        await parseResponse(response);
+
+      console.log(
+        "Email sent:",
+        data
       );
 
       setShowCompose(false);
@@ -362,28 +564,419 @@ function App() {
         to: "",
         subject: "",
         body: "",
+        threadId: "",
+        inReplyTo: "",
+        references: "",
       });
 
+      setAiMessage(
+        "Email sent successfully."
+      );
+
+      if (currentFolder === "sent") {
+        await loadSentEmails();
+      }
     } catch (err) {
       console.error(
-        "Send email error:",
+        "Send error:",
         err
       );
 
-      alert(
-        `Failed to send email: ${err.message}`
-      );
+      setError(err.message);
     } finally {
       setSending(false);
     }
-  };
+  }
 
-  // -----------------------------------------
-  // FILTER EMAILS
-  // -----------------------------------------
+  // ---------------------------------------
+  // Delete / Trash
+  // ---------------------------------------
 
-  const filteredEmails = emails.filter(
-    (email) => {
+  async function deleteEmail(email) {
+    if (!email?.id) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        "Move this email to Trash?"
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+
+      const response =
+        await fetch(
+          `${API_URL}/api/gmail/messages/${email.id}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+      await parseResponse(response);
+
+      setEmails((previous) =>
+        previous.filter(
+          (item) =>
+            item.id !== email.id
+        )
+      );
+
+      setSelectedEmail(null);
+
+      setAiMessage(
+        "Email moved to Trash."
+      );
+    } catch (err) {
+      console.error(
+        "Delete error:",
+        err
+      );
+
+      setError(err.message);
+    }
+  }
+
+  // ---------------------------------------
+  // AI Command
+  // ---------------------------------------
+
+  async function handleAICommand(
+    commandOverride = null
+  ) {
+    const command =
+      commandOverride !== null
+        ? commandOverride
+        : userCommand;
+
+    if (!command.trim()) {
+      return;
+    }
+
+    try {
+      setAiLoading(true);
+      setError("");
+
+      setAiMessage(
+        "Gemini is processing your request..."
+      );
+
+      const response =
+        await fetch(
+          `${API_URL}/api/ai/command`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              command,
+            }),
+          }
+        );
+
+      const data =
+        await parseResponse(response);
+
+      console.log(
+        "AI command:",
+        data
+      );
+
+      const action =
+        data.action;
+
+      if (action === "show_inbox") {
+        skipNextFolderLoad.current =
+          true;
+
+        setCurrentFolder("inbox");
+        setSelectedEmail(null);
+        setViewFilter("all");
+        setSearchText("");
+
+        const results =
+          await loadEmails();
+
+        setAiMessage(
+          `Inbox opened. ${results.length} emails loaded.`
+        );
+      } else if (
+        action === "show_sent"
+      ) {
+        skipNextFolderLoad.current =
+          true;
+
+        setCurrentFolder("sent");
+        setSelectedEmail(null);
+        setViewFilter("all");
+        setSearchText("");
+
+        const results =
+          await loadSentEmails();
+
+        setAiMessage(
+          `Sent folder opened. ${results.length} emails loaded.`
+        );
+      } else if (
+        action === "show_unread"
+      ) {
+        skipNextFolderLoad.current =
+          true;
+
+        setCurrentFolder("inbox");
+        setSelectedEmail(null);
+        setViewFilter("unread");
+        setSearchText("");
+
+        const results =
+          await loadEmails(
+            "is:unread"
+          );
+
+        setAiMessage(
+          `Found ${results.length} unread emails.`
+        );
+      } else if (
+        action === "search"
+      ) {
+        skipNextFolderLoad.current =
+          true;
+
+        setCurrentFolder("inbox");
+        setSelectedEmail(null);
+        setViewFilter("all");
+        setSearchText("");
+
+        const query =
+          data.query ||
+          command;
+
+        const results =
+          await loadEmails(query);
+
+        setAiMessage(
+          `Found ${results.length} matching emails.`
+        );
+      } else if (
+        action === "compose"
+      ) {
+        setComposeData({
+          to:
+            data.recipient ||
+            "",
+          subject:
+            data.subject ||
+            "",
+          body:
+            data.body ||
+            "",
+          threadId: "",
+          inReplyTo: "",
+          references: "",
+        });
+
+        setShowCompose(true);
+
+        if (data.recipient) {
+          setAiMessage(
+            `Compose window opened for ${data.recipient}.`
+          );
+        } else {
+          setAiMessage(
+            "Compose window opened. Tell me the recipient, subject and message if you want me to fill it."
+          );
+        }
+      } else if (
+        action === "open_email"
+      ) {
+        let targetEmail = null;
+
+        const subject =
+          data.subject
+            ?.toLowerCase() ||
+          "";
+
+        const message =
+          data.message
+            ?.toLowerCase() ||
+          "";
+
+        const query =
+          data.query || "";
+
+        targetEmail =
+          emails.find((email) => {
+            const emailSubject =
+              email.subject
+                ?.toLowerCase() ||
+              "";
+
+            const from =
+              email.from
+                ?.toLowerCase() ||
+              "";
+
+            const snippet =
+              email.snippet
+                ?.toLowerCase() ||
+              "";
+
+            if (
+              subject &&
+              emailSubject.includes(
+                subject
+              )
+            ) {
+              return true;
+            }
+
+            if (
+              subject &&
+              subject.includes(
+                emailSubject
+              )
+            ) {
+              return true;
+            }
+
+            if (
+              message &&
+              emailSubject.includes(
+                message
+              )
+            ) {
+              return true;
+            }
+
+            if (
+              query &&
+              (
+                emailSubject.includes(
+                  query.toLowerCase()
+                ) ||
+                from.includes(
+                  query.toLowerCase()
+                ) ||
+                snippet.includes(
+                  query.toLowerCase()
+                )
+              )
+            ) {
+              return true;
+            }
+
+            return false;
+          });
+
+        if (!targetEmail) {
+          let gmailQuery =
+            data.query || "";
+
+          if (
+            !gmailQuery &&
+            data.subject
+          ) {
+            gmailQuery =
+              `subject:"${data.subject}"`;
+          }
+
+          if (!gmailQuery) {
+            gmailQuery =
+              command;
+          }
+
+          const results =
+            await loadEmails(
+              gmailQuery
+            );
+
+          if (results.length > 0) {
+            targetEmail =
+              results[0];
+          }
+        }
+
+        if (!targetEmail) {
+          throw new Error(
+            "I could not find the requested email."
+          );
+        }
+
+        await openEmail(
+          targetEmail
+        );
+
+        setAiMessage(
+          `Opened email: ${
+            targetEmail.subject ||
+            "No subject"
+          }`
+        );
+      } else if (
+        action === "clear"
+      ) {
+        skipNextFolderLoad.current =
+          true;
+
+        setCurrentFolder("inbox");
+        setSelectedEmail(null);
+        setViewFilter("all");
+        setSearchText("");
+
+        const results =
+          await loadEmails();
+
+        setAiMessage(
+          `Inbox cleared. Showing ${results.length} emails.`
+        );
+      } else {
+        setAiMessage(
+          data.message ||
+            "I could not understand that command. Try something like: show my unread emails from GitHub."
+        );
+      }
+
+      setUserCommand("");
+    } catch (err) {
+      console.error(
+        "AI command error:",
+        err
+      );
+
+      setError(err.message);
+      setAiMessage("");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  // ---------------------------------------
+  // Quick AI command helper
+  // ---------------------------------------
+
+  function handleAICommandWithText(text) {
+    setUserCommand(text);
+    handleAICommand(text);
+  }
+
+  // ---------------------------------------
+  // Search
+  // ---------------------------------------
+  const filteredEmails =
+    emails.filter((email) => {
+      if (
+        viewFilter === "unread" &&
+        !email.unread
+      ) {
+        return false;
+      }
+
       if (!searchText.trim()) {
         return true;
       }
@@ -392,600 +985,1178 @@ function App() {
         searchText.toLowerCase();
 
       return (
-        email.from
-          ?.toLowerCase()
-          .includes(search) ||
-        email.to
-          ?.toLowerCase()
-          .includes(search) ||
         email.subject
+          ?.toLowerCase()
+          .includes(search) ||
+        email.from
           ?.toLowerCase()
           .includes(search) ||
         email.snippet
           ?.toLowerCase()
           .includes(search)
       );
-    }
-  );
+    });
 
-  // -----------------------------------------
-  // GET SENDER NAME
-  // -----------------------------------------
-
-  const getSenderName = (from) => {
-    if (!from) {
-      return "Unknown sender";
-    }
-
-    const match = from.match(
-      /^"?([^"<]+)"?\s*</
-    );
-
-    if (match) {
-      return match[1].trim();
-    }
-
-    return from;
-  };
-
-  // -----------------------------------------
-  // UI
-  // -----------------------------------------
+  // ---------------------------------------
+  // Render
+  // ---------------------------------------
 
   return (
-    <div className="mail-app">
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f5f7fb",
+        fontFamily:
+          "Arial, Helvetica, sans-serif",
+        color: "#1f2937",
+      }}
+    >
+      {/* Header */}
 
-      {/* =====================================
-          SIDEBAR
-      ====================================== */}
+      <header
+        style={{
+          height: "70px",
+          background: "#ffffff",
+          borderBottom:
+            "1px solid #e5e7eb",
+          display: "flex",
+          alignItems: "center",
+          justifyContent:
+            "space-between",
+          padding: "0 28px",
+          boxSizing: "border-box",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: "24px",
+              fontWeight: "700",
+            }}
+          >
+            AI Powered Mail
+          </div>
 
-      <aside className="sidebar">
-
-        <div className="logo">
-          ✉️ AI Mail
+          <div
+            style={{
+              fontSize: "13px",
+              color: "#6b7280",
+              marginTop: "3px",
+            }}
+          >
+            Gmail + Gemini AI
+          </div>
         </div>
 
-        <button
-          className="compose-button"
-          onClick={openBlankCompose}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
         >
-          ＋ Compose
-        </button>
+          <div
+            style={{
+              fontSize: "12px",
+              color: realtimeConnected
+                ? "#15803d"
+                : "#9ca3af",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+          >
+            <span>
+              ●
+            </span>
+            {realtimeConnected
+              ? "Real-time connected"
+              : "Real-time disconnected"}
+          </div>
 
-        <nav>
+          <button
+            onClick={() => {
+              setSelectedEmail(null);
+              setShowCompose(false);
 
-          <button className="nav-item active">
-            📥 Inbox
-            <span>{emails.length}</span>
+              if (
+                currentFolder ===
+                "inbox"
+              ) {
+                loadEmails();
+              } else {
+                loadSentEmails();
+              }
+            }}
+            style={{
+              border:
+                "1px solid #d1d5db",
+              background: "#ffffff",
+              borderRadius: "8px",
+              padding:
+                "9px 15px",
+              cursor: "pointer",
+            }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
+      </header>
+
+      {/* Main Layout */}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "220px minmax(0, 1fr) 320px",
+          minHeight:
+            "calc(100vh - 70px)",
+        }}
+      >
+        {/* Sidebar */}
+
+        <aside
+          style={{
+            background: "#ffffff",
+            borderRight:
+              "1px solid #e5e7eb",
+            padding:
+              "24px 15px",
+          }}
+        >
+          <button
+            onClick={
+              openBlankCompose
+            }
+            style={{
+              width: "100%",
+              background:
+                "#2563eb",
+              color:
+                "#ffffff",
+              border: "none",
+              borderRadius:
+                "9px",
+              padding: "13px",
+              fontWeight:
+                "700",
+              cursor:
+                "pointer",
+              marginBottom:
+                "22px",
+            }}
+          >
+            + Compose
           </button>
 
-          <button className="nav-item">
+          <button
+            onClick={() => {
+              setCurrentFolder(
+                "inbox"
+              );
+              setViewFilter(
+                "all"
+              );
+            }}
+            style={{
+              width: "100%",
+              textAlign:
+                "left",
+              padding:
+                "12px",
+              border: "none",
+              borderRadius:
+                "8px",
+              background:
+                currentFolder ===
+                  "inbox" &&
+                viewFilter ===
+                  "all"
+                  ? "#eef2ff"
+                  : "transparent",
+              cursor:
+                "pointer",
+              marginBottom:
+                "5px",
+            }}
+          >
+            📥 Inbox
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentFolder(
+                "sent"
+              );
+              setViewFilter(
+                "all"
+              );
+            }}
+            style={{
+              width: "100%",
+              textAlign:
+                "left",
+              padding:
+                "12px",
+              border: "none",
+              borderRadius:
+                "8px",
+              background:
+                currentFolder ===
+                "sent"
+                  ? "#eef2ff"
+                  : "transparent",
+              cursor:
+                "pointer",
+              marginBottom:
+                "5px",
+            }}
+          >
             📤 Sent
           </button>
 
-          <button className="nav-item">
+          <button
+            onClick={async () => {
+              setCurrentFolder(
+                "inbox"
+              );
+              setViewFilter(
+                "unread"
+              );
+              setSelectedEmail(
+                null
+              );
+
+              skipNextFolderLoad.current =
+                true;
+
+              await loadEmails(
+                "is:unread"
+              );
+            }}
+            style={{
+              width: "100%",
+              textAlign:
+                "left",
+              padding:
+                "12px",
+              border: "none",
+              borderRadius:
+                "8px",
+              background:
+                viewFilter ===
+                "unread"
+                  ? "#eef2ff"
+                  : "transparent",
+              cursor:
+                "pointer",
+              marginBottom:
+                "5px",
+            }}
+          >
+            📩 Unread
+          </button>
+
+          <button
+            disabled
+            style={{
+              width: "100%",
+              textAlign:
+                "left",
+              padding:
+                "12px",
+              border: "none",
+              background:
+                "transparent",
+              color:
+                "#9ca3af",
+              cursor:
+                "not-allowed",
+              marginBottom:
+                "5px",
+            }}
+          >
             ⭐ Starred
           </button>
 
-          <button className="nav-item">
-            🗑️ Trash
-          </button>
-
-        </nav>
-
-        <div className="sidebar-bottom">
-
           <button
-            className="connect-button"
-            onClick={() => {
-              window.location.href =
-                `${API_URL}/auth/google`;
+            disabled
+            style={{
+              width: "100%",
+              textAlign:
+                "left",
+              padding:
+                "12px",
+              border: "none",
+              background:
+                "transparent",
+              color:
+                "#9ca3af",
+              cursor:
+                "not-allowed",
             }}
           >
-            🔗 Connect Gmail
+            🗑️ Trash
           </button>
+        </aside>
 
-        </div>
+        {/* Email List / Detail */}
 
-      </aside>
+        <main
+          style={{
+            padding: "20px",
+            overflow:
+              "auto",
+          }}
+        >
+          {selectedEmail ? (
+            <div
+              style={{
+                background:
+                  "#ffffff",
+                borderRadius:
+                  "12px",
+                padding:
+                  "28px",
+                minHeight:
+                  "600px",
+                boxSizing:
+                  "border-box",
+              }}
+            >
+              <button
+                onClick={
+                  closeEmail
+                }
+                style={{
+                  border:
+                    "none",
+                  background:
+                    "transparent",
+                  cursor:
+                    "pointer",
+                  marginBottom:
+                    "20px",
+                }}
+              >
+                ← Back
+              </button>
 
-      {/* =====================================
-          MAIN CONTENT
-      ====================================== */}
+              <h1
+                style={{
+                  fontSize:
+                    "25px",
+                  marginBottom:
+                    "10px",
+                }}
+              >
+                {selectedEmail.subject ||
+                  "No subject"}
+              </h1>
 
-      <main className="main-content">
-
-        {/* HEADER */}
-
-        <header className="top-bar">
-
-          <div>
-            <h1>Inbox</h1>
-
-            <p>
-              Real Gmail messages
-            </p>
-          </div>
-
-          <button
-            className="refresh-button"
-            onClick={loadEmails}
-            disabled={loading}
-          >
-            🔄 {loading ? "Loading..." : "Refresh"}
-          </button>
-
-        </header>
-
-        {/* SEARCH */}
-
-        <div className="search-box">
-
-          <span>🔍</span>
-
-          <input
-            type="text"
-            placeholder="Search emails..."
-            value={searchText}
-            onChange={(e) =>
-              setSearchText(e.target.value)
-            }
-          />
-
-        </div>
-
-        {/* ERROR */}
-
-        {error && (
-          <div className="error-message">
-            ❌ {error}
-          </div>
-        )}
-
-        {/* LOADING */}
-
-        {loading ? (
-
-          <div className="empty-state">
-
-            <h2>
-              Loading Gmail...
-            </h2>
-
-            <p>
-              Fetching your real inbox messages.
-            </p>
-
-          </div>
-
-        ) : (
-
-          <div className="mail-layout">
-
-            {/* =================================
-                EMAIL LIST
-            ================================== */}
-
-            <section className="email-list">
-
-              {filteredEmails.length === 0 ? (
-
-                <div className="empty-state">
-
-                  <h2>
-                    No emails found
-                  </h2>
-
-                  <p>
-                    Try another search.
-                  </p>
-
+              <div
+                style={{
+                  color:
+                    "#6b7280",
+                  marginBottom:
+                    "20px",
+                }}
+              >
+                <div>
+                  <strong>
+                    From:
+                  </strong>{" "}
+                  {selectedEmail.from ||
+                    ""}
                 </div>
-
-              ) : (
-
-                filteredEmails.map(
-                  (email) => (
-
-                    <button
-                      key={email.id}
-                      className={`email-row ${
-                        email.unread
-                          ? "unread"
-                          : ""
-                      }`}
-                      onClick={() =>
-                        setSelectedEmail(email)
-                      }
-                    >
-
-                      {/* AVATAR */}
-
-                      <div className="email-avatar">
-
-                        {getSenderName(
-                          email.from
-                        )
-                          .charAt(0)
-                          .toUpperCase()}
-
-                      </div>
-
-                      {/* EMAIL CONTENT */}
-
-                      <div className="email-content">
-
-                        <div className="email-top">
-
-                          <strong>
-                            {getSenderName(
-                              email.from
-                            )}
-                          </strong>
-
-                          <span>
-                            {email.date
-                              ? new Date(
-                                  email.date
-                                ).toLocaleString()
-                              : ""}
-                          </span>
-
-                        </div>
-
-                        <div className="email-subject">
-
-                          {email.subject ||
-                            "(No subject)"}
-
-                        </div>
-
-                        <div className="email-snippet">
-
-                          {email.snippet}
-
-                        </div>
-
-                      </div>
-
-                      {/* UNREAD DOT */}
-
-                      {email.unread && (
-                        <div className="unread-dot"></div>
-                      )}
-
-                    </button>
-
-                  )
-                )
-
-              )}
-
-            </section>
-
-            {/* =================================
-                EMAIL DETAIL
-            ================================== */}
-
-            <section className="email-detail">
-
-              {selectedEmail ? (
 
                 <div>
-
-                  <button
-                    className="close-detail"
-                    onClick={() =>
-                      setSelectedEmail(null)
-                    }
-                  >
-                    ← Back
-                  </button>
-
-                  <h2>
-                    {selectedEmail.subject ||
-                      "(No subject)"}
-                  </h2>
-
-                  <div className="detail-sender">
-
-                    <strong>
-                      {getSenderName(
-                        selectedEmail.from
-                      )}
-                    </strong>
-
-                    <span>
-                      {selectedEmail.from}
-                    </span>
-
-                  </div>
-
-                  <div className="detail-info">
-
-                    To:{" "}
-                    {selectedEmail.to}
-
-                  </div>
-
-                  <div className="detail-info">
-
-                    {selectedEmail.date}
-
-                  </div>
-
-                  <hr />
-
-                  <p className="detail-body">
-
-                    {selectedEmail.snippet}
-
-                  </p>
-
-                  {/* REPLY */}
-
-                  <button
-                    className="reply-button"
-                    onClick={() => {
-
-                      setComposeData({
-                        to: selectedEmail.from,
-                        subject: `Re: ${
-                          selectedEmail.subject ||
-                          ""
-                        }`,
-                        body: "",
-                      });
-
-                      setShowCompose(true);
-
-                    }}
-                  >
-                    ↩️ Reply
-                  </button>
-
+                  <strong>
+                    To:
+                  </strong>{" "}
+                  {selectedEmail.to ||
+                    ""}
                 </div>
 
-              ) : (
-
-                <div className="empty-detail">
-
-                  <div>📧</div>
-
-                  <h2>
-                    Select an email
-                  </h2>
-
-                  <p>
-                    Choose an email from your real
-                    Gmail inbox.
-                  </p>
-
+                <div>
+                  <strong>
+                    Date:
+                  </strong>{" "}
+                  {selectedEmail.date ||
+                    ""}
                 </div>
+              </div>
 
-              )}
+              <div
+                style={{
+                  whiteSpace:
+                    "pre-wrap",
+                  lineHeight:
+                    "1.7",
+                  minHeight:
+                    "300px",
+                  padding:
+                    "20px 0",
+                }}
+              >
+                {selectedEmail.body ||
+                  selectedEmail.snippet ||
+                  "No message content."}
+              </div>
 
-            </section>
+              <div
+                style={{
+                  display:
+                    "flex",
+                  gap: "10px",
+                  flexWrap:
+                    "wrap",
+                  borderTop:
+                    "1px solid #e5e7eb",
+                  paddingTop:
+                    "20px",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    replyToEmail(
+                      selectedEmail
+                    )
+                  }
+                  disabled={
+                    sending
+                  }
+                  style={{
+                    background:
+                      "#7c3aed",
+                    color:
+                      "#ffffff",
+                    border:
+                      "none",
+                    borderRadius:
+                      "8px",
+                    padding:
+                      "10px 18px",
+                    cursor:
+                      "pointer",
+                  }}
+                >
+                  ✨ Smart Reply
+                </button>
 
-          </div>
+                <button
+                  onClick={() =>
+                    forwardEmail(
+                      selectedEmail
+                    )
+                  }
+                  style={{
+                    background:
+                      "#2563eb",
+                    color:
+                      "#ffffff",
+                    border:
+                      "none",
+                    borderRadius:
+                      "8px",
+                    padding:
+                      "10px 18px",
+                    cursor:
+                      "pointer",
+                  }}
+                >
+                  ↗ Forward
+                </button>
 
-        )}
-
-        {/* =====================================
-            AI ASSISTANT
-        ====================================== */}
-
-        <section className="ai-assistant">
-
-          <div className="ai-header">
-
-            <div>
-
-              <strong>
-                🤖 AI Assistant
-              </strong>
-
-              <p>
-                {aiMessage}
-              </p>
-
+                <button
+                  onClick={() =>
+                    deleteEmail(
+                      selectedEmail
+                    )
+                  }
+                  style={{
+                    background:
+                      "#ffffff",
+                    color:
+                      "#dc2626",
+                    border:
+                      "1px solid #fecaca",
+                    borderRadius:
+                      "8px",
+                    padding:
+                      "10px 18px",
+                    cursor:
+                      "pointer",
+                  }}
+                >
+                  🗑️ Trash
+                </button>
+              </div>
             </div>
+          ) : (
+            <div
+              style={{
+                background:
+                  "#ffffff",
+                borderRadius:
+                  "12px",
+                overflow:
+                  "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding:
+                    "20px",
+                  borderBottom:
+                    "1px solid #e5e7eb",
+                }}
+              >
+                <h2
+                  style={{
+                    margin:
+                      "0 0 14px 0",
+                  }}
+                >
+                  {currentFolder ===
+                  "sent"
+                    ? "Sent"
+                    : viewFilter ===
+                      "unread"
+                    ? "Unread"
+                    : "Inbox"}
+                </h2>
 
+                <input
+                  value={
+                    searchText
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setSearchText(
+                      event
+                        .target
+                        .value
+                    )
+                  }
+                  placeholder="Search emails..."
+                  style={{
+                    width:
+                      "100%",
+                    boxSizing:
+                      "border-box",
+                    padding:
+                      "11px 13px",
+                    border:
+                      "1px solid #d1d5db",
+                    borderRadius:
+                      "8px",
+                    outline:
+                      "none",
+                  }}
+                />
+              </div>
+
+              {loading ? (
+                <div
+                  style={{
+                    padding:
+                      "50px",
+                    textAlign:
+                      "center",
+                    color:
+                      "#6b7280",
+                  }}
+                >
+                  Loading emails...
+                </div>
+              ) : filteredEmails.length ===
+                0 ? (
+                <div
+                  style={{
+                    padding:
+                      "50px",
+                    textAlign:
+                      "center",
+                    color:
+                      "#6b7280",
+                  }}
+                >
+                  No emails found.
+                </div>
+              ) : (
+                filteredEmails.map(
+                  (email) => (
+                    <button
+                      key={
+                        email.id
+                      }
+                      onClick={() =>
+                        openEmail(
+                          email
+                        )
+                      }
+                      style={{
+                        width:
+                          "100%",
+                        textAlign:
+                          "left",
+                        border:
+                          "none",
+                        borderBottom:
+                          "1px solid #f0f0f0",
+                        background:
+                          email.unread
+                            ? "#f8faff"
+                            : "#ffffff",
+                        padding:
+                          "17px 20px",
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap: "15px",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            fontWeight:
+                              email.unread
+                                ? "700"
+                                : "500",
+                          }}
+                        >
+                          {email.from ||
+                            "Unknown sender"}
+                        </strong>
+
+                        <span
+                          style={{
+                            fontSize:
+                              "12px",
+                            color:
+                              "#9ca3af",
+                          }}
+                        >
+                          {email.date ||
+                            ""}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            "7px",
+                          fontWeight:
+                            email.unread
+                              ? "700"
+                              : "500",
+                        }}
+                      >
+                        {email.subject ||
+                          "(No subject)"}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            "5px",
+                          color:
+                            "#6b7280",
+                          fontSize:
+                            "13px",
+                          whiteSpace:
+                            "nowrap",
+                          overflow:
+                            "hidden",
+                          textOverflow:
+                            "ellipsis",
+                        }}
+                      >
+                        {email.snippet ||
+                          ""}
+                      </div>
+                    </button>
+                  )
+                )
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* AI Assistant */}
+
+        <aside
+          style={{
+            background:
+              "#ffffff",
+            borderLeft:
+              "1px solid #e5e7eb",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              fontSize:
+                "21px",
+              fontWeight:
+                "700",
+              marginBottom:
+                "6px",
+            }}
+          >
+            ✨ AI Assistant
           </div>
 
-          {/* AI INPUT */}
+          <p
+            style={{
+              color:
+                "#6b7280",
+              fontSize:
+                "13px",
+              lineHeight:
+                "1.5",
+            }}
+          >
+            Control your mailbox using natural
+            language.
+          </p>
 
-          <div className="ai-input">
-
-            <input
-              type="text"
-              placeholder='Try: "Show my unread emails"'
-              value={userCommand}
-              onChange={(e) =>
-                setUserCommand(
-                  e.target.value
+          <div
+            style={{
+              display:
+                "grid",
+              gap: "8px",
+              marginBottom:
+                "15px",
+            }}
+          >
+            <button
+              onClick={() =>
+                handleAICommandWithText(
+                  "show my unread emails"
                 )
               }
-              onKeyDown={(e) => {
-
-                if (e.key === "Enter") {
-                  sendAICommand();
-                }
-
-              }}
-            />
-
-            <button
-              onClick={sendAICommand}
+              style={
+                quickButtonStyle
+              }
+              disabled={
+                aiLoading
+              }
             >
-              Send
-            </button>
-
-          </div>
-
-          {/* QUICK COMMANDS */}
-
-          <div className="quick-commands">
-
-            <button
-              onClick={() => {
-
-                const unreadCount =
-                  emails.filter(
-                    (email) =>
-                      email.unread
-                  ).length;
-
-                setSearchText("");
-
-                setAiMessage(
-                  `You have ${unreadCount} unread email${
-                    unreadCount !== 1
-                      ? "s"
-                      : ""
-                  }.`
-                );
-
-              }}
-            >
-              Show unread
+              Show unread emails
             </button>
 
             <button
-              onClick={() => {
-
-                setSearchText("");
-
-                setAiMessage(
-                  "Showing your recent Gmail messages."
-                );
-
-              }}
+              onClick={() =>
+                handleAICommandWithText(
+                  "show my sent emails"
+                )
+              }
+              style={
+                quickButtonStyle
+              }
+              disabled={
+                aiLoading
+              }
             >
-              Recent emails
+              Show sent emails
             </button>
 
             <button
-              onClick={openBlankCompose}
+              onClick={() =>
+                handleAICommandWithText(
+                  "compose an email"
+                )
+              }
+              style={
+                quickButtonStyle
+              }
+              disabled={
+                aiLoading
+              }
             >
               Compose email
             </button>
-
           </div>
 
-        </section>
+          <textarea
+            value={
+              userCommand
+            }
+            onChange={(
+              event
+            ) =>
+              setUserCommand(
+                event.target
+                  .value
+              )
+            }
+            placeholder="Example: open the email with subject [Spotify] Please verify your device"
+            rows={5}
+            style={{
+              width:
+                "100%",
+              boxSizing:
+                "border-box",
+              resize:
+                "vertical",
+              padding:
+                "12px",
+              border:
+                "1px solid #d1d5db",
+              borderRadius:
+                "8px",
+              outline:
+                "none",
+              fontFamily:
+                "inherit",
+              fontSize:
+                "13px",
+            }}
+          />
 
-      </main>
+          <button
+            onClick={() =>
+              handleAICommand()
+            }
+            disabled={
+              aiLoading
+            }
+            style={{
+              width:
+                "100%",
+              marginTop:
+                "10px",
+              padding:
+                "12px",
+              background:
+                "#111827",
+              color:
+                "#ffffff",
+              border:
+                "none",
+              borderRadius:
+                "8px",
+              cursor:
+                aiLoading
+                  ? "not-allowed"
+                  : "pointer",
+              opacity:
+                aiLoading
+                  ? 0.6
+                  : 1,
+              fontWeight:
+                "700",
+            }}
+          >
+            {aiLoading
+              ? "Thinking..."
+              : "Ask AI"}
+          </button>
 
-      {/* =====================================
-          COMPOSE MODAL
-      ====================================== */}
+          {aiMessage && (
+            <div
+              style={{
+                marginTop:
+                  "15px",
+                padding:
+                  "12px",
+                borderRadius:
+                  "8px",
+                background:
+                  "#f3f4f6",
+                fontSize:
+                  "13px",
+                lineHeight:
+                  "1.5",
+              }}
+            >
+              {aiMessage}
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                marginTop:
+                  "15px",
+                padding:
+                  "12px",
+                borderRadius:
+                  "8px",
+                background:
+                  "#fef2f2",
+                color:
+                  "#b91c1c",
+                fontSize:
+                  "13px",
+                lineHeight:
+                  "1.5",
+              }}
+            >
+              {error}
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* Compose Modal */}
 
       {showCompose && (
-
-        <div className="modal-overlay">
-
-          <div className="compose-modal">
-
-            {/* COMPOSE HEADER */}
-
-            <div className="compose-header">
-
-              <h2>
-                New Email
+        <div
+          style={{
+            position:
+              "fixed",
+            inset: 0,
+            background:
+              "rgba(0,0,0,0.45)",
+            display:
+              "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            padding:
+              "20px",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              width:
+                "min(760px, 100%)",
+              background:
+                "#ffffff",
+              borderRadius:
+                "14px",
+              padding:
+                "25px",
+              boxSizing:
+                "border-box",
+            }}
+          >
+            <div
+              style={{
+                display:
+                  "flex",
+                justifyContent:
+                  "space-between",
+                alignItems:
+                  "center",
+                marginBottom:
+                  "20px",
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                }}
+              >
+                Compose Email
               </h2>
 
               <button
-                onClick={() => {
-
-                  if (!sending) {
-                    setShowCompose(false);
-                  }
-
+                onClick={() =>
+                  setShowCompose(
+                    false
+                  )
+                }
+                style={{
+                  border:
+                    "none",
+                  background:
+                    "transparent",
+                  fontSize:
+                    "22px",
+                  cursor:
+                    "pointer",
                 }}
-                disabled={sending}
               >
-                ✕
+                ×
               </button>
-
             </div>
 
-            {/* TO */}
-
             <input
-              type="email"
+              value={
+                composeData.to
+              }
+              onChange={(
+                event
+              ) =>
+                setComposeData({
+                  ...composeData,
+                  to: event
+                    .target
+                    .value,
+                })
+              }
               placeholder="To"
-              value={composeData.to}
-              onChange={(e) =>
-                setComposeData({
-                  ...composeData,
-                  to: e.target.value,
-                })
+              style={
+                composeInputStyle
               }
-              disabled={sending}
             />
-
-            {/* SUBJECT */}
 
             <input
-              type="text"
-              placeholder="Subject"
-              value={composeData.subject}
-              onChange={(e) =>
+              value={
+                composeData.subject
+              }
+              onChange={(
+                event
+              ) =>
                 setComposeData({
                   ...composeData,
-                  subject: e.target.value,
+                  subject:
+                    event
+                      .target
+                      .value,
                 })
               }
-              disabled={sending}
+              placeholder="Subject"
+              style={
+                composeInputStyle
+              }
             />
-
-            {/* BODY */}
 
             <textarea
-              placeholder="Write your message..."
-              value={composeData.body}
-              onChange={(e) =>
+              value={
+                composeData.body
+              }
+              onChange={(
+                event
+              ) =>
                 setComposeData({
                   ...composeData,
-                  body: e.target.value,
+                  body: event
+                    .target
+                    .value,
                 })
               }
-              disabled={sending}
+              placeholder="Write your email..."
+              rows={14}
+              style={{
+                ...composeInputStyle,
+                resize:
+                  "vertical",
+              }}
             />
 
-            {/* ACTIONS */}
-
-            <div className="compose-actions">
-
+            <div
+              style={{
+                display:
+                  "flex",
+                justifyContent:
+                  "flex-end",
+                gap: "10px",
+                marginTop:
+                  "15px",
+              }}
+            >
               <button
                 onClick={() =>
-                  setShowCompose(false)
+                  setShowCompose(
+                    false
+                  )
                 }
-                disabled={sending}
+                style={{
+                  padding:
+                    "11px 18px",
+                  border:
+                    "none",
+                  background:
+                    "transparent",
+                  cursor:
+                    "pointer",
+                }}
               >
                 Cancel
               </button>
 
               <button
-                className="send-button"
-                onClick={sendEmail}
-                disabled={sending}
+                onClick={
+                  sendEmail
+                }
+                disabled={
+                  sending
+                }
+                style={{
+                  padding:
+                    "11px 22px",
+                  border:
+                    "none",
+                  borderRadius:
+                    "8px",
+                  background:
+                    "#2563eb",
+                  color:
+                    "#ffffff",
+                  cursor:
+                    sending
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    sending
+                      ? 0.6
+                      : 1,
+                  fontWeight:
+                    "700",
+                }}
               >
                 {sending
                   ? "Sending..."
-                  : "📤 Send Email"}
+                  : "Send"}
               </button>
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 }
+
+// ---------------------------------------
+// Styles
+// ---------------------------------------
+
+const quickButtonStyle = {
+  width: "100%",
+  padding: "10px",
+  border:
+    "1px solid #e5e7eb",
+  background:
+    "#ffffff",
+  borderRadius:
+    "8px",
+  cursor:
+    "pointer",
+  textAlign:
+    "left",
+};
+
+const composeInputStyle = {
+  width: "100%",
+  boxSizing:
+    "border-box",
+  padding: "12px",
+  border:
+    "1px solid #d1d5db",
+  borderRadius:
+    "8px",
+  marginBottom:
+    "10px",
+  fontFamily:
+    "inherit",
+  fontSize:
+    "14px",
+  outline:
+    "none",
+};
 export default App;

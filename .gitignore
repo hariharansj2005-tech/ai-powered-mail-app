@@ -12,6 +12,7 @@ server/.env
 server/.env.*
 server/credentials.json
 server/token.json
+server/gmail-pubsub-key.json
 
 # Build output
 dist/
@@ -25,4 +26,4 @@ build/
 Thumbs.db
 
 # VS Code
-.vscode/
+.vscode/ 
