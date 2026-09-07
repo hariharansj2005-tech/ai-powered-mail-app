@@ -335,8 +335,15 @@ Possible future improvements include:
 - Improved responsive design
 - Additional AI mailbox actions
 
+## Screenshots / Demo
+
+### AI Compose
+
+![AI Compose](screenshots/ai-compose.png)
+
 ## Project Goal
 
 The goal of this project is to demonstrate a real Gmail-connected mail client where AI does more than provide chat responses.
 
 The AI assistant can understand user intent and control the mail application's interface, including searching, filtering, opening emails, composing messages, and generating replies.
+
