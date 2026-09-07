@@ -65,7 +65,7 @@ function App() {
   }
 
   // ---------------------------------------
-  // Support both API response formats
+  // Support API response formats
   // ---------------------------------------
 
   function getMessageList(data) {
@@ -121,7 +121,10 @@ function App() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(`${API_URL}/api/gmail/sent`);
+      const response = await fetch(
+        `${API_URL}/api/gmail/sent`
+      );
+
       const data = await parseResponse(response);
 
       const messageList = getMessageList(data);
@@ -194,6 +197,7 @@ function App() {
           if (currentFolder === "inbox") {
             if (!selectedEmail && !showCompose) {
               await loadEmails();
+
               setAiMessage(
                 "Inbox updated automatically from Gmail."
               );
@@ -240,10 +244,7 @@ function App() {
     }
 
     const interval = setInterval(() => {
-      if (
-        !selectedEmail &&
-        !showCompose
-      ) {
+      if (!selectedEmail && !showCompose) {
         loadEmails();
       }
     }, 30000);
@@ -532,8 +533,7 @@ ${email.body || email.snippet || ""}
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
             to: composeData.to,
@@ -966,8 +966,9 @@ ${email.body || email.snippet || ""}
   }
 
   // ---------------------------------------
-  // Search
+  // Local Search
   // ---------------------------------------
+
   const filteredEmails =
     emails.filter((email) => {
       if (
@@ -1066,9 +1067,8 @@ ${email.body || email.snippet || ""}
               gap: "5px",
             }}
           >
-            <span>
-              ●
-            </span>
+            <span>●</span>
+
             {realtimeConnected
               ? "Real-time connected"
               : "Real-time disconnected"}
@@ -1091,11 +1091,14 @@ ${email.body || email.snippet || ""}
             style={{
               border:
                 "1px solid #d1d5db",
-              background: "#ffffff",
-              borderRadius: "8px",
+              background:
+                "#ffffff",
+              borderRadius:
+                "8px",
               padding:
                 "9px 15px",
-              cursor: "pointer",
+              cursor:
+                "pointer",
             }}
           >
             ↻ Refresh
@@ -1118,7 +1121,8 @@ ${email.body || email.snippet || ""}
 
         <aside
           style={{
-            background: "#ffffff",
+            background:
+              "#ffffff",
             borderRight:
               "1px solid #e5e7eb",
             padding:
@@ -1160,14 +1164,7 @@ ${email.body || email.snippet || ""}
               );
             }}
             style={{
-              width: "100%",
-              textAlign:
-                "left",
-              padding:
-                "12px",
-              border: "none",
-              borderRadius:
-                "8px",
+              ...sidebarButtonStyle,
               background:
                 currentFolder ===
                   "inbox" &&
@@ -1175,15 +1172,10 @@ ${email.body || email.snippet || ""}
                   "all"
                   ? "#eef2ff"
                   : "transparent",
-              cursor:
-                "pointer",
-              marginBottom:
-                "5px",
             }}
           >
             📥 Inbox
           </button>
-
           <button
             onClick={() => {
               setCurrentFolder(
@@ -1194,23 +1186,12 @@ ${email.body || email.snippet || ""}
               );
             }}
             style={{
-              width: "100%",
-              textAlign:
-                "left",
-              padding:
-                "12px",
-              border: "none",
-              borderRadius:
-                "8px",
+              ...sidebarButtonStyle,
               background:
                 currentFolder ===
                 "sent"
                   ? "#eef2ff"
                   : "transparent",
-              cursor:
-                "pointer",
-              marginBottom:
-                "5px",
             }}
           >
             📤 Sent
@@ -1236,23 +1217,12 @@ ${email.body || email.snippet || ""}
               );
             }}
             style={{
-              width: "100%",
-              textAlign:
-                "left",
-              padding:
-                "12px",
-              border: "none",
-              borderRadius:
-                "8px",
+              ...sidebarButtonStyle,
               background:
                 viewFilter ===
                 "unread"
                   ? "#eef2ff"
                   : "transparent",
-              cursor:
-                "pointer",
-              marginBottom:
-                "5px",
             }}
           >
             📩 Unread
@@ -1261,20 +1231,11 @@ ${email.body || email.snippet || ""}
           <button
             disabled
             style={{
-              width: "100%",
-              textAlign:
-                "left",
-              padding:
-                "12px",
-              border: "none",
-              background:
-                "transparent",
+              ...sidebarButtonStyle,
               color:
                 "#9ca3af",
               cursor:
                 "not-allowed",
-              marginBottom:
-                "5px",
             }}
           >
             ⭐ Starred
@@ -1283,14 +1244,7 @@ ${email.body || email.snippet || ""}
           <button
             disabled
             style={{
-              width: "100%",
-              textAlign:
-                "left",
-              padding:
-                "12px",
-              border: "none",
-              background:
-                "transparent",
+              ...sidebarButtonStyle,
               color:
                 "#9ca3af",
               cursor:
@@ -1338,6 +1292,8 @@ ${email.body || email.snippet || ""}
                     "pointer",
                   marginBottom:
                     "20px",
+                  fontSize:
+                    "14px",
                 }}
               >
                 ← Back
@@ -1400,9 +1356,13 @@ ${email.body || email.snippet || ""}
                     "20px 0",
                 }}
               >
-                {selectedEmail.body ||
+                {openingEmail ? (
+                  "Opening email..."
+                ) : (
+                  selectedEmail.body ||
                   selectedEmail.snippet ||
-                  "No message content."}
+                  "No message content."
+                )}
               </div>
 
               <div
@@ -1536,8 +1496,7 @@ ${email.body || email.snippet || ""}
                     event
                   ) =>
                     setSearchText(
-                      event
-                        .target
+                      event.target
                         .value
                     )
                   }
@@ -1701,19 +1660,69 @@ ${email.body || email.snippet || ""}
             borderLeft:
               "1px solid #e5e7eb",
             padding: "20px",
+            overflowY:
+              "auto",
           }}
         >
+          {/* Assistant Header */}
+
           <div
             style={{
-              fontSize:
-                "21px",
-              fontWeight:
-                "700",
+              display:
+                "flex",
+              alignItems:
+                "center",
+              gap: "10px",
               marginBottom:
-                "6px",
+                "5px",
             }}
           >
-            ✨ AI Assistant
+            <div
+              style={{
+                width:
+                  "40px",
+                height:
+                  "40px",
+                borderRadius:
+                  "12px",
+                background:
+                  "#ede9fe",
+                display:
+                  "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                fontSize:
+                  "20px",
+              }}
+            >
+              ✨
+            </div>
+
+            <div>
+              <div
+                style={{
+                  fontSize:
+                    "20px",
+                  fontWeight:
+                    "700",
+                }}
+              >
+                AI Assistant
+              </div>
+
+              <div
+                style={{
+                  fontSize:
+                    "11px",
+                  color:
+                    "#6b7280",
+                }}
+              >
+                Gmail control assistant
+              </div>
+            </div>
           </div>
 
           <p
@@ -1724,11 +1733,157 @@ ${email.body || email.snippet || ""}
                 "13px",
               lineHeight:
                 "1.5",
+              marginBottom:
+                "15px",
             }}
           >
-            Control your mailbox using natural
-            language.
+            Control your mailbox using
+            natural language. The assistant
+            updates the main mail interface
+            for you.
           </p>
+
+          {/* Rich selected email preview */}
+
+          {selectedEmail && (
+            <div
+              style={{
+                border:
+                  "1px solid #ddd6fe",
+                background:
+                  "#faf9ff",
+                borderRadius:
+                  "10px",
+                padding:
+                  "12px",
+                marginBottom:
+                  "15px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize:
+                    "11px",
+                  color:
+                    "#7c3aed",
+                  fontWeight:
+                    "700",
+                  textTransform:
+                    "uppercase",
+                  marginBottom:
+                    "7px",
+                }}
+              >
+                Current email
+              </div>
+
+              <div
+                style={{
+                  fontWeight:
+                    "700",
+                  fontSize:
+                    "13px",
+                  marginBottom:
+                    "5px",
+                }}
+              >
+                {selectedEmail.subject ||
+                  "No subject"}
+              </div>
+
+              <div
+                style={{
+                  fontSize:
+                    "12px",
+                  color:
+                    "#6b7280",
+                  marginBottom:
+                    "7px",
+                }}
+              >
+                From:{" "}
+                {selectedEmail.from ||
+                  "Unknown"}
+              </div>
+
+              <div
+                style={{
+                  fontSize:
+                    "12px",
+                  color:
+                    "#4b5563",
+                  lineHeight:
+                    "1.4",
+                  display:
+                    "-webkit-box",
+                  WebkitLineClamp:
+                    3,
+                  WebkitBoxOrient:
+                    "vertical",
+                  overflow:
+                    "hidden",
+                }}
+              >
+                {selectedEmail.body ||
+                  selectedEmail.snippet ||
+                  "No preview available."}
+              </div>
+
+              <button
+                onClick={() =>
+                  replyToEmail(
+                    selectedEmail
+                  )
+                }
+                disabled={
+                  sending
+                }
+                style={{
+                  marginTop:
+                    "10px",
+                  width:
+                    "100%",
+                  padding:
+                    "8px",
+                  border:
+                    "1px solid #c4b5fd",
+                  background:
+                    "#ffffff",
+                  color:
+                    "#6d28d9",
+                  borderRadius:
+                    "7px",
+                  cursor:
+                    "pointer",
+                  fontWeight:
+                    "600",
+                  fontSize:
+                    "12px",
+                }}
+              >
+                ✨ Draft reply to this email
+              </button>
+            </div>
+          )}
+
+          {/* Quick commands */}
+
+          <div
+            style={{
+              fontSize:
+                "11px",
+              fontWeight:
+                "700",
+              color:
+                "#6b7280",
+              textTransform:
+                "uppercase",
+              marginBottom:
+                "8px",
+            }}
+          >
+            Quick actions
+          </div>
 
           <div
             style={{
@@ -1752,7 +1907,7 @@ ${email.body || email.snippet || ""}
                 aiLoading
               }
             >
-              Show unread emails
+              📩 Show unread emails
             </button>
 
             <button
@@ -1768,7 +1923,7 @@ ${email.body || email.snippet || ""}
                 aiLoading
               }
             >
-              Show sent emails
+              📤 Show sent emails
             </button>
 
             <button
@@ -1784,8 +1939,41 @@ ${email.body || email.snippet || ""}
                 aiLoading
               }
             >
-              Compose email
+              ✉️ Compose email
             </button>
+
+            <button
+              onClick={() =>
+                handleAICommandWithText(
+                  "show my inbox"
+                )
+              }
+              style={
+                quickButtonStyle
+              }
+              disabled={
+                aiLoading
+              }
+            >
+              📥 Show inbox
+            </button>
+            {/* Natural language command */}
+
+          <div
+            style={{
+              fontSize:
+                "11px",
+              fontWeight:
+                "700",
+              color:
+                "#6b7280",
+              textTransform:
+                "uppercase",
+              marginBottom:
+                "8px",
+            }}
+          >
+            Ask the assistant
           </div>
 
           <textarea
@@ -1800,7 +1988,7 @@ ${email.body || email.snippet || ""}
                   .value
               )
             }
-            placeholder="Example: open the email with subject [Spotify] Please verify your device"
+            placeholder="Example: show my unread emails from GitHub"
             rows={5}
             style={{
               width:
@@ -1863,26 +2051,54 @@ ${email.body || email.snippet || ""}
               : "Ask AI"}
           </button>
 
+          {/* AI response */}
+
           {aiMessage && (
             <div
               style={{
                 marginTop:
                   "15px",
-                padding:
-                  "12px",
+                border:
+                  "1px solid #ddd6fe",
                 borderRadius:
-                  "8px",
-                background:
-                  "#f3f4f6",
-                fontSize:
-                  "13px",
-                lineHeight:
-                  "1.5",
+                  "10px",
+                overflow:
+                  "hidden",
               }}
             >
-              {aiMessage}
+              <div
+                style={{
+                  padding:
+                    "8px 10px",
+                  background:
+                    "#f5f3ff",
+                  color:
+                    "#6d28d9",
+                  fontSize:
+                    "11px",
+                  fontWeight:
+                    "700",
+                }}
+              >
+                AI ACTIVITY
+              </div>
+
+              <div
+                style={{
+                  padding:
+                    "12px",
+                  fontSize:
+                    "13px",
+                  lineHeight:
+                    "1.5",
+                }}
+              >
+                {aiMessage}
+              </div>
             </div>
           )}
+
+          {/* Error */}
 
           {error && (
             <div
@@ -1903,9 +2119,86 @@ ${email.body || email.snippet || ""}
                   "1.5",
               }}
             >
-              {error}
+              <strong>
+                Error
+              </strong>
+
+              <div
+                style={{
+                  marginTop:
+                    "4px",
+                }}
+              >
+                {error}
+              </div>
             </div>
           )}
+
+          {/* Assistant capabilities */}
+
+          <div
+            style={{
+              marginTop:
+                "18px",
+              padding:
+                "12px",
+              background:
+                "#f9fafb",
+              borderRadius:
+                "10px",
+              border:
+                "1px solid #e5e7eb",
+            }}
+          >
+            <div
+              style={{
+                fontSize:
+                  "11px",
+                fontWeight:
+                  "700",
+                color:
+                  "#374151",
+                marginBottom:
+                  "8px",
+              }}
+            >
+              AI CAPABILITIES
+            </div>
+
+            <div
+              style={{
+                display:
+                  "grid",
+                gap:
+                  "5px",
+                fontSize:
+                  "11px",
+                color:
+                  "#6b7280",
+              }}
+            >
+              <div>
+                ✓ Compose & fill email
+              </div>
+
+              <div>
+                ✓ Search & filter Gmail
+              </div>
+
+              <div>
+                ✓ Open specific email
+              </div>
+
+              <div>
+                ✓ Context-aware reply
+              </div>
+
+              <div>
+                ✓ Control mailbox UI
+              </div>
+            </div>
+          </div>
+          </div>
         </aside>
       </div>
 
@@ -1942,6 +2235,8 @@ ${email.body || email.snippet || ""}
                 "25px",
               boxSizing:
                 "border-box",
+              boxShadow:
+                "0 20px 50px rgba(0,0,0,0.2)",
             }}
           >
             <div
@@ -2126,9 +2421,20 @@ ${email.body || email.snippet || ""}
 // Styles
 // ---------------------------------------
 
+const sidebarButtonStyle = {
+  width: "100%",
+  textAlign: "left",
+  padding: "12px",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  marginBottom: "5px",
+  fontSize: "14px",
+};
+
 const quickButtonStyle = {
   width: "100%",
-  padding: "10px",
+  padding: "10px 11px",
   border:
     "1px solid #e5e7eb",
   background:
@@ -2139,6 +2445,10 @@ const quickButtonStyle = {
     "pointer",
   textAlign:
     "left",
+  fontSize:
+    "12px",
+  fontWeight:
+    "600",
 };
 
 const composeInputStyle = {
